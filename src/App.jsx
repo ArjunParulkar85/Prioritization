@@ -63,7 +63,6 @@ function parseMetaFromDescription(desc=""){
   const idx=desc.lastIndexOf(META_PREFIX);
   if(idx<0) return null;
   const tail=desc.slice(idx).trim();
-  // expected: [CXO] k=v;k=v;...
   const m = tail.match(/\[CXO\]\s*(.*)$/);
   if(!m) return null;
   const kv=m[1].split(";").map(s=>s.trim()).filter(Boolean);
@@ -272,7 +271,7 @@ export default function App(){
     }catch(e){ setStatus(`❌ ${e.message||e}`); }
   }
 
-  // confirm wrappers
+  // confirmations
   function confirmPushSelected(){
     const chosen=sorted.filter(r=>r.selected && !r.trelloId);
     if(!listId) return setStatus("⚠️ Choose a destination list first.");
@@ -301,7 +300,6 @@ export default function App(){
     let ok=0, fail=0;
     for(const r of chosen){
       try{
-        // temp UID; will replace with idShort after POST succeed if available
         let uid = r.uid || makeTempUID();
         const metaLine = buildMetaLine({
           impact:r.impact, reach:r.reach, effort:r.effort, urgency:r.urgency, align:r.align, uid
@@ -314,7 +312,7 @@ export default function App(){
           body: JSON.stringify({ idList:listId, name:r.name, desc })
         });
         if(!res.ok) throw new Error(await res.text());
-        const card = await res.json(); // expect id, idShort, etc.
+        const card = await res.json();
         ok++;
 
         // if Trello gave us idShort, patch metadata line to use it
@@ -324,12 +322,10 @@ export default function App(){
             impact:r.impact, reach:r.reach, effort:r.effort, urgency:r.urgency, align:r.align, uid:trueUid
           });
           const newDesc = `${r.notes || ""}${r.notes ? "\n\n" : ""}${newMeta}`;
-          // update description to replace temp uid
           await fetch(`/api/trello/cards/${card.id}`,{
             method:"PUT", headers:{"Content-Type":"application/json"},
             body: JSON.stringify({ desc:newDesc })
           }).catch(()=>{});
-          // reflect back in local row
           updateRow(r.id,{ trelloId:card.id, idShort:card.idShort, shortLink:card.shortLink, uid:trueUid, imported:true });
         }
       }catch{ fail++; }
@@ -394,8 +390,20 @@ export default function App(){
         .tooltip-box { position:absolute; left:0; top:120%; min-width:220px; max-width:320px; background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.35; box-shadow:0 8px 22px rgba(0,0,0,.18); opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity .12s, transform .12s; z-index:5; }
         .bubble-wrap:hover .tooltip-box { opacity:1; transform:translateY(0); pointer-events:auto; }
 
+        /* ORANGE custom scrollbar for the table area */
+        .scroll-viewport::-webkit-scrollbar { width:12px; height:12px; }
+        .scroll-viewport::-webkit-scrollbar-track { background:var(--panel); border-left:1px solid var(--border); }
+        .scroll-viewport::-webkit-scrollbar-thumb { background:linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius:8px; border:3px solid var(--panel); }
+        .scroll-viewport { scrollbar-width:thin; scrollbar-color:${BRAND} var(--panel); }
+
         .toolbar { display:grid; grid-auto-flow:column; grid-auto-columns:max-content; align-items:center; gap:10px; }
         @media (max-width:1100px){ .toolbar { grid-auto-flow:row; grid-template-columns:repeat(3, minmax(160px, 1fr)); } }
+
+        /* Drawer (fixed right) + backdrop */
+        .drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:49; opacity:0; pointer-events:none; transition:opacity .2s ease; }
+        .drawer-backdrop.open { opacity:1; pointer-events:auto; }
+        .drawer { position:fixed; right:0; top:0; bottom:0; width:380px; background:var(--panel); border-left:1px solid var(--border); transform:translateX(100%); transition:transform .2s ease; z-index:50; padding:16px; overflow:auto; }
+        .drawer.open { transform:translateX(0); }
 
         /* modal */
         .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:60; }
@@ -413,7 +421,7 @@ export default function App(){
           {/* Search & controls */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr auto auto auto", gap:8, alignItems:"center" }}>
             <input className="cx-input" placeholder="Search title or description…" value={query} onChange={(e)=>setQuery(e.target.value)} />
-            <button className="cx-btn" onClick={()=>setShowWeights(s=>!s)}>Weights</button>
+            <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
             <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark? "🌙 Dark":"☀️ Light"}</button>
             <div style={{ display:"flex", gap:8 }}>
               <button className="cx-btn" onClick={saveToCloud}>Save</button>
@@ -471,26 +479,6 @@ export default function App(){
           <div style={{ marginTop:8, color:theme.muted, minHeight:22 }}>{status}</div>
         </div>
 
-        {/* Weights drawer */}
-        <div className={`drawer ${showWeights? "open": ""}`}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-            <h3>Weights</h3><button className="cx-btn" onClick={()=>setShowWeights(false)}>Close</button>
-          </div>
-          {[
-            ["Impact (wI)","wI","Emphasize value to business & users"],
-            ["Reach (wR)","wR","How many users are affected"],
-            ["Effort (wE)","wE","Total team work; higher reduces score"],
-            ["Urgency (wU)","wU","Criticality / blockers / timing"],
-            ["Alignment (wA)","wA","Strategic fit with current goals"],
-          ].map(([label,key,sub])=>(
-            <div key={key} style={{ marginBottom:14 }}>
-              <div style={{ fontSize:12, color:theme.muted, marginBottom:6 }}>{label} <span style={{opacity:.7}}>— {sub}</span></div>
-              <input type="range" min="0" max="4" step="0.1" value={weights[key]} onChange={(e)=>setW(key,e.target.value)} style={{ width:"100%" }} />
-              <div style={{ textAlign:"right", fontSize:12 }}>{weights[key]}</div>
-            </div>
-          ))}
-        </div>
-
         {/* Table */}
         <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, overflow:"hidden" }}>
           <div className="scroll-viewport">
@@ -522,7 +510,6 @@ export default function App(){
                     <td className="cell">
                       <textarea className="cx-textarea desc-textarea" rows={3} value={r.notes||""}
                         onChange={(e)=>updateRow(r.id,{notes:e.target.value})} />
-                      {/* UID hint (read-only display) */}
                       <div style={{ fontSize:12, color:theme.muted, marginTop:6 }}>
                         UID: {r.idShort ?? r.uid ?? "—"}
                       </div>
@@ -569,6 +556,32 @@ export default function App(){
           <button className="cx-btn" onClick={confirmPushOrder}>Push Order to Trello</button>
           <div style={{ color:theme.muted, lineHeight:"36px" }}>{status}</div>
         </div>
+      </div>
+
+      {/* Drawer backdrop + drawer */}
+      <div
+        className={`drawer-backdrop ${showWeights ? "open" : ""}`}
+        onClick={()=>setShowWeights(false)}
+      />
+      <div className={`drawer ${showWeights ? "open" : ""}`}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <h3 style={{ margin:0 }}>Weights</h3>
+          <button className="cx-btn" onClick={()=>setShowWeights(false)}>Close</button>
+        </div>
+        {[
+          ["Impact (wI)","wI","Emphasize value to business & users"],
+          ["Reach (wR)","wR","How many users are affected"],
+          ["Effort (wE)","wE","Total team work; higher reduces score"],
+          ["Urgency (wU)","wU","Criticality / blockers / timing"],
+          ["Alignment (wA)","wA","Strategic fit with current goals"],
+        ].map(([label,key,sub])=>(
+          <div key={key} style={{ marginBottom:16 }}>
+            <div style={{ fontSize:12, color:theme.muted, marginBottom:6 }}>{label} <span style={{opacity:.7}}>— {sub}</span></div>
+            <input type="range" min="0" max="4" step="0.1" value={weights[key]} onChange={(e)=>setW(key,e.target.value)} style={{ width:"100%" }} />
+            <div style={{ textAlign:"right", fontSize:12 }}>{weights[key]}</div>
+          </div>
+        ))}
+        <div style={{ fontSize:12, color:theme.muted }}>Tip: all 1’s give a simple, clean model. Increase a slider to emphasize that factor.</div>
       </div>
 
       {/* Confirm modals */}
