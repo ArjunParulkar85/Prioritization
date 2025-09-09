@@ -2,13 +2,12 @@
 import React, { useMemo, useState, useEffect } from "react";
 
 const BRAND = "#D76400";
-const STORAGE_KEY = "cxo_prioritizer_v1"; // local convenience cache
+const STORAGE_KEY = "cxo_prioritizer_v1";
 
 const DEFAULT_WEIGHTS = {
   impact: 25, ttv: 15, feasibility: 15, data: 10, risk: 10, align: 15, buyin: 10,
 };
 
-// Short definitions for tooltips
 const FACTOR_DEFS = {
   impact: "Business value if delivered: revenue, cost savings, NPS, risk reduction. (0–5 higher is better)",
   ttv: "Time-to-Value: how quickly value is realized once started. (0–5 higher = faster)",
@@ -26,7 +25,7 @@ function scoreRow(r, w, total) {
     ttv: clamp01((r.ttv ?? 0) / 5),
     feasibility: clamp01((r.feasibility ?? 0) / 5),
     data: clamp01((r.data ?? 0) / 5),
-    risk: 1 - clamp01((r.risk ?? 0) / 5), // reversed
+    risk: 1 - clamp01((r.risk ?? 0) / 5),
     align: clamp01((r.align ?? 0) / 5),
     buyin: clamp01((r.buyin ?? 0) / 5),
   };
@@ -45,20 +44,18 @@ function startRow(name = "New Use Case", description = "", seed = 3, imported = 
     notes: description,
     impact: seed, ttv: seed, feasibility: seed, data: seed, risk: seed, align: seed, buyin: seed, cost: seed,
     selected: false,
-    imported, // <-- mark rows that came from Trello import
+    imported, // marks items brought from Trello
   };
 }
 
-// local storage helpers
 const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; } };
 const saveNow = (payload) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); } catch {} };
 
-// score → color (Red high priority → Orange → Yellow → Green low)
 function scoreColor(score) {
-  if (score >= 75) return "#E02424";   // red
-  if (score >= 50) return "#F59E0B";   // orange
-  if (score >= 25) return "#FBBF24";   // yellow
-  return "#10B981";                    // green
+  if (score >= 75) return "#E02424"; // red
+  if (score >= 50) return "#F59E0B"; // orange
+  if (score >= 25) return "#FBBF24"; // yellow
+  return "#10B981";                  // green
 }
 
 export default function App() {
@@ -101,24 +98,20 @@ export default function App() {
     return copy;
   }, [computed, sortKey, sortDir]);
 
-  // UI helpers
+  // helpers
   function setWeight(k, v) { setWeights(w => ({ ...w, [k]: Number(v) })); }
   function updateRow(id, patch) { setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r)); }
   function addRow() { setRows(rs => [startRow(), ...rs]); }
   function removeRow(id) { setRows(rs => rs.filter(r => r.id !== id)); }
   function toggleSelect(id, v) { updateRow(id, { selected: v }); }
-  function resetAll() {
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
-    setDark(false);
-    setWeights(DEFAULT_WEIGHTS);
-    setRows([
-      startRow("Autonomous Case Triage in Service Cloud", "Auto-classify, route, and draft replies", 4),
-      startRow("Sales Email Agent for Pipeline Acceleration", "Auto-personalize emails and suggest next best actions", 3),
-    ]);
-    setStatus("🔄 Data reset (local).");
-  }
 
-  // --- New bulk helpers for imported cards (in-app only, not Trello) ---
+  // Bulk selection / deletion
+  function selectAll() {
+    setRows(rs => rs.map(r => ({ ...r, selected: true })));
+  }
+  function clearSelection() {
+    setRows(rs => rs.map(r => ({ ...r, selected: false })));
+  }
   function selectAllImported() {
     setRows(rs => rs.map(r => r.imported ? { ...r, selected: true } : r));
   }
@@ -133,7 +126,18 @@ export default function App() {
     setStatus(count ? `🗑️ Deleted ${count} imported row(s) locally.` : "No imported rows to delete.");
   }
 
-  // Cloud SAVE / LOAD (Firestore via API)
+  function resetAll() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    setDark(false);
+    setWeights(DEFAULT_WEIGHTS);
+    setRows([
+      startRow("Autonomous Case Triage in Service Cloud", "Auto-classify, route, and draft replies", 4),
+      startRow("Sales Email Agent for Pipeline Acceleration", "Auto-personalize emails and suggest next best actions", 3),
+    ]);
+    setStatus("🔄 Data reset (local).");
+  }
+
+  // Cloud SAVE / LOAD
   async function saveToCloud() {
     try {
       const r = await fetch("/api/storage/save", {
@@ -155,12 +159,10 @@ export default function App() {
       if (W) setWeights(W);
       if (typeof D === "boolean") setDark(D);
       setStatus("☁️ Loaded from GCP.");
-    } catch (e) {
-      setStatus(`❌ Load failed: ${e.message || e}`);
-    }
+    } catch (e) { setStatus(`❌ Load failed: ${e.message || e}`); }
   }
 
-  // Trello calls
+  // Trello
   async function fetchBoards() {
     setStatus("Connecting…");
     try {
@@ -188,7 +190,6 @@ export default function App() {
       const r = await fetch(`/api/trello/lists/${listId}/cards`);
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      // Mark imported items with imported: true
       const imported = data.map(c => startRow(c.name || "Card", c.desc || "", 3, true));
       setRows(prev => [...imported, ...prev]);
       setStatus(`✅ Imported ${imported.length} cards.`);
@@ -221,24 +222,37 @@ export default function App() {
 
   return (
     <div style={{ minHeight:"100vh", background: theme.background, color: theme.text, fontFamily:"Inter, ui-sans-serif, system-ui, Arial", padding:"12px 12px" }}>
-      {/* polished inputs, full-width layout, and custom scrollbars */}
       <style>{`
         :root { --border:${theme.border}; --panel:${theme.panel}; --text:${theme.text}; --muted:${theme.muted}; --brand:${BRAND}; --input:${theme.input}; --inputBorder:${theme.inputBorder}; }
-        .wrap { max-width: min(1900px, 98vw); margin: 0 auto; } /* full width with tiny side gutter */
+        * { box-sizing: border-box; }
+        .wrap { max-width: min(1920px, 98.5vw); margin: 0 auto; }
+        /* Controls */
         .controls { display:grid; grid-template-columns: repeat(4, minmax(180px, 1fr)) auto; gap:12px; align-items:center; }
+        .actions { display:flex; gap:8px; flex-wrap:wrap; }
+        /* Buttons & inputs */
         .cx-btn { padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; cursor:pointer; }
         .cx-btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
         .cx-btn.ghost { background:transparent; }
         .cx-input, .cx-select, .cx-number, .cx-textarea {
           width:100%; background:var(--input); color:var(--text);
           border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none;
-          transition: border-color .15s, box-shadow .15s; line-height:1.2;
+          transition: border-color .15s, box-shadow .15s; line-height:1.25;
         }
         .cx-input:focus, .cx-select:focus, .cx-number:focus, .cx-textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px ${BRAND}22; }
-        .cx-number { width:64px; text-align:center; }
-        .row-actions { display:flex; gap:8px; }
+        .cx-number { width:62px; text-align:center; padding:8px 10px; }
+        .cx-textarea { resize: vertical; min-height: 46px; }
+        /* Table layout */
+        .scroll-viewport { max-height: 66vh; overflow: auto; }
+        .cx-table { width:100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
         .cx-table thead th { position: sticky; top: 0; background:var(--panel); z-index: 2; }
+        .cell { padding: 10px 12px; vertical-align: top; }
+        .cell.nw { white-space: nowrap; }
+        .col-score  { width:76px; }
+        .col-sel    { width:60px; }
+        .col-num    { width:90px; }
+        .col-del    { width:96px; }
         .cx-chip { display:inline-flex; align-items:center; justify-content:center; min-width:46px; height:46px; font-weight:800; border-radius:999px; color:#fff; }
+        /* Tooltips */
         .tooltip { position: relative; cursor: help; }
         .tooltip .i { background:var(--border); color:var(--text); border-radius:8px; padding:0 6px; font-size:11px }
         .tooltip:hover .tip { opacity:1; transform: translateY(0); pointer-events:auto; }
@@ -248,14 +262,11 @@ export default function App() {
           border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.35; opacity:0; transform: translateY(-4px);
           pointer-events:none; transition: opacity .12s ease, transform .12s ease; box-shadow: 0 6px 18px rgba(0,0,0,.12);
         }
-        /* Nice scrollbars (Chrome/Edge/Safari) */
+        /* Scrollbar */
         .scroll-viewport::-webkit-scrollbar { width: 12px; height: 12px; }
         .scroll-viewport::-webkit-scrollbar-track { background: var(--panel); border-left:1px solid var(--border); }
         .scroll-viewport::-webkit-scrollbar-thumb { background: linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius: 8px; border: 3px solid var(--panel); }
-        .scroll-viewport { scrollbar-width: thin; scrollbar-color: ${BRAND} var(--panel); } /* Firefox */
-        .cell { padding: 8px 10px; vertical-align: top; }
-        .nowrap { white-space: nowrap; }
-        .wraptext { white-space: pre-wrap; word-break: break-word; }
+        .scroll-viewport { scrollbar-width: thin; scrollbar-color: ${BRAND} var(--panel); }
       `}</style>
 
       <div className="wrap">
@@ -268,7 +279,7 @@ export default function App() {
               <span style={{ color: BRAND, fontWeight:800 }}>Agentic Prioritization</span>
             </h1>
           </div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
+          <div className="actions">
             <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark ? "🌙 Dark" : "☀️ Light"}</button>
             <button className="cx-btn" onClick={saveToCloud}>Save to Cloud</button>
             <button className="cx-btn" onClick={loadFromCloud}>Load from Cloud</button>
@@ -276,9 +287,9 @@ export default function App() {
           </div>
         </div>
 
-        {/* Trello + Sorting + Imported controls */}
+        {/* Trello + Sorting + Bulk selection */}
         <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:12, marginBottom:12 }}>
-          <div className="controls" style={{ gap:12 }}>
+          <div className="controls">
             <button className="cx-btn primary" onClick={fetchBoards}>Connect Trello</button>
             <select className="cx-select" value={boardId} onChange={(e)=>fetchListsFor(e.target.value)}>
               <option value="">— Choose board —</option>
@@ -290,8 +301,8 @@ export default function App() {
             </select>
             <button className="cx-btn" onClick={importFromList}>Import from list</button>
 
-            <div style={{ display:"flex", gap:10, justifySelf:"end", minWidth: 340 }}>
-              <select className="cx-select" value={sortKey} onChange={(e)=>setSortKey(e.target.value)} style={{ flex:1 }}>
+            <div className="actions" style={{ justifySelf:"end" }}>
+              <select className="cx-select" value={sortKey} onChange={(e)=>setSortKey(e.target.value)} style={{ minWidth:230 }}>
                 <option value="score">Sort by: Priority Score</option>
                 <option value="name">Title (A→Z)</option>
                 <option value="impact">Impact</option>
@@ -310,8 +321,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Imported management */}
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
+          {/* Bulk selection/delete row */}
+          <div className="actions" style={{ marginTop:10 }}>
+            <button className="cx-btn" onClick={selectAll}>Select All</button>
+            <button className="cx-btn" onClick={clearSelection}>Clear Selection</button>
             <button className="cx-btn" onClick={selectAllImported}>Select All Imported</button>
             <button className="cx-btn" onClick={deleteSelectedLocal}>Delete Selected (Local)</button>
             <button className="cx-btn" onClick={deleteAllImportedLocal}>Delete All Imported (Local)</button>
@@ -343,58 +356,47 @@ export default function App() {
           </div>
         </div>
 
-        {/* Table with sticky header + no horizontal scroll */}
+        {/* Table */}
         <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, overflow:"hidden" }}>
-          <div className="scroll-viewport" style={{ maxHeight:"65vh", overflow:"auto" }}>
-            <table className="cx-table" style={{ borderCollapse:"separate", borderSpacing:0, width:"100%" }}>
+          <div className="scroll-viewport">
+            <table className="cx-table">
               <thead>
                 <tr style={{ textAlign:"left", color:theme.muted }}>
-                  <th className="cell nowrap" style={{ width:76 }}>Score</th>
-                  <th className="cell nowrap" style={{ width:64 }}>Sel</th>
-                  <th className="cell" style={{ minWidth:280 }}>Use Case / Trello Title</th>
-                  <th className="cell" style={{ minWidth:360 }}>Description</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Impact</th>
-                  <th className="cell nowrap" style={{ width:90 }}>TTV</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Feas.</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Data</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Risk</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Align</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Buy-in</th>
-                  <th className="cell nowrap" style={{ width:90 }}>Cost</th>
-                  <th className="cell nowrap" style={{ width:90 }}>—</th>
+                  <th className="cell nw col-score">Score</th>
+                  <th className="cell nw col-sel">Sel</th>
+                  <th className="cell">Use Case / Trello Title</th>
+                  <th className="cell">Description</th>
+                  <th className="cell nw col-num">Impact</th>
+                  <th className="cell nw col-num">TTV</th>
+                  <th className="cell nw col-num">Feas.</th>
+                  <th className="cell nw col-num">Data</th>
+                  <th className="cell nw col-num">Risk</th>
+                  <th className="cell nw col-num">Align</th>
+                  <th className="cell nw col-num">Buy-in</th>
+                  <th className="cell nw col-num">Cost</th>
+                  <th className="cell nw col-del">—</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map(r => (
                   <tr key={r.id} style={{ borderTop:`1px solid ${theme.border}` }}>
-                    {/* Score bubble (left) */}
                     <td className="cell">
                       <div className="cx-chip" style={{ background: scoreColor(r.score) }}>{r.score}</div>
                     </td>
-
-                    {/* Select */}
                     <td className="cell">
                       <input type="checkbox" checked={!!r.selected} onChange={(e)=>toggleSelect(r.id, e.target.checked)} />
                     </td>
-
-                    {/* Title */}
                     <td className="cell">
                       <input className="cx-input" value={r.name} onChange={(e)=>updateRow(r.id,{ name:e.target.value })} />
                     </td>
-
-                    {/* Description (moved earlier) */}
                     <td className="cell">
                       <textarea className="cx-textarea" rows={3} value={r.notes||""} onChange={(e)=>updateRow(r.id,{ notes:e.target.value })} />
                     </td>
-
-                    {/* Factors */}
                     {["impact","ttv","feasibility","data","risk","align","buyin","cost"].map(k=>(
                       <td key={k} className="cell">
                         <input className="cx-number" type="number" min="0" max="5" value={r[k]??0} onChange={(e)=>updateRow(r.id,{ [k]:Number(e.target.value) })} />
                       </td>
                     ))}
-
-                    {/* Delete */}
                     <td className="cell">
                       <button className="cx-btn primary" onClick={()=>removeRow(r.id)}>Delete</button>
                     </td>
@@ -405,11 +407,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Footer actions */}
-        <div style={{ display:"flex", gap:10, marginTop:12, flexWrap:"wrap" }}>
+        {/* Footer */}
+        <div className="actions" style={{ marginTop:12 }}>
           <button className="cx-btn primary" onClick={addRow}>Add Row</button>
           <button className="cx-btn" onClick={pushSelected}>Push selected to Trello</button>
-          <div style={{ color:theme.muted, lineHeight:"36px" }}>{status}</div>
         </div>
       </div>
     </div>
