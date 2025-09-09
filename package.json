@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@google-cloud/firestore": "^7.8.0"
   },
   "devDependencies": {
     "vite": "^5.0.0",
