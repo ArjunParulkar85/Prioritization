@@ -7,20 +7,6 @@ const STORAGE_KEY = "cxo_prioritizer_v2";
 // Factor weights (default = 1)
 const DEFAULT_WEIGHTS = { wI: 1, wR: 1, wE: 1, wU: 1, wA: 1 };
 
-// Tooltips/defs
-const FACTOR_DEFS = {
-  impact:
-    "How much will this move the needle on key business goals and solve a real user problem? (1–5 higher is better)",
-  reach:
-    "How many users or customers will be affected in a given period? (1–5 higher = more people)",
-  effort:
-    "Total work to deliver (dev/design/QA). T-shirt sizes: XS=1, S=2, M=3, L=5, XL=8. Higher = more effort.",
-  urgency:
-    "How critical is this right now? Used to flag blockers or time-sensitive work. Low=1, Medium=2, High=3, Critical=4.",
-  align:
-    "How well does this support current strategic goals (quarter/year)? (1–5 higher = more aligned)",
-};
-
 // Effort & Urgency dropdown maps
 const EFFORT_OPTIONS = [
   { label: "XS", value: 1 },
@@ -35,6 +21,9 @@ const URGENCY_OPTIONS = [
   { label: "High", value: 3 },
   { label: "Critical", value: 4 },
 ];
+
+// Common 1–5 options for Impact/Reach/Alignment
+const ONE_TO_FIVE = [1, 2, 3, 4, 5];
 
 // Helpers
 function clamp01(x) { return Math.max(0, Math.min(1, x)); }
@@ -52,8 +41,8 @@ function startRow(
     // New factors (fresh defaults):
     impact: 3,
     reach: 3,
-    effort: 3, // M
-    urgency: 2, // Medium
+    effort: 3,   // M
+    urgency: 2,  // Medium
     align: 3,
     // selection flags
     selected: false,
@@ -66,7 +55,7 @@ function startRow(
 function computeScore(row, W) {
   const I = Number(row.impact || 0);
   const R = Number(row.reach || 0);
-  const E = Math.max(1, Number(row.effort || 1));  // avoid divide by zero
+  const E = Math.max(1, Number(row.effort || 1)); // avoid divide by zero
   const U = Number(row.urgency || 0);
   const A = Number(row.align || 0);
 
@@ -76,9 +65,10 @@ function computeScore(row, W) {
   const wU = Number(W.wU || 1);
   const wA = Number(W.wA || 1);
 
+  // ((wI·I × wR·R) + wU·U + wA·A) / (wE·E)
   const raw = ((wI * I) * (wR * R) + (wU * U) + (wA * A)) / (wE * E);
 
-  // compute a theoretical max for 0..100 scaling
+  // theoretical max for scaling to 0..100
   const maxRaw = ((wI * 5) * (wR * 5) + (wU * 4) + (wA * 5)) / (wE * 1);
   const score = Math.round(clamp01(raw / (maxRaw || 1)) * 100);
   return { score, raw, maxRaw };
@@ -100,11 +90,7 @@ function colorForScore(score) {
 function hexToRgb(hex) {
   const m = hex.replace("#", "");
   const int = parseInt(m, 16);
-  return {
-    r: (int >> 16) & 255,
-    g: (int >> 8) & 255,
-    b: int & 255,
-  };
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
 }
 
 const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; } };
@@ -307,6 +293,7 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background: theme.background, color: theme.text, fontFamily:"Inter, ui-sans-serif, system-ui, Arial", padding:"12px 12px" }}>
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
         :root { --border:${theme.border}; --panel:${theme.panel}; --text:${theme.text}; --muted:${theme.muted}; --brand:${BRAND}; --input:${theme.input}; --inputBorder:${theme.inputBorder}; }
         * { box-sizing: border-box; }
         .wrap { max-width: min(1920px, 98.5vw); margin: 0 auto; }
@@ -315,52 +302,66 @@ export default function App() {
         .cx-btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
         .cx-btn.ghost { background:transparent; }
         .cx-input, .cx-select, .cx-number, .cx-textarea {
-          width:100%; background:var(--input); color:var(--text);
+          background:var(--input); color:var(--text);
           border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none;
           transition: border-color .15s, box-shadow .15s; line-height:1.25;
         }
-        .cx-input:focus, .cx-select:focus, .cx-number:focus, .cx-textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px ${BRAND}22; }
+        /* tighten controls: inputs stretch where needed, selects auto-size by content */
+        .cx-input, .cx-textarea { width: 100%; }
+        .cx-select { width: auto; }
         .cx-number { width:62px; text-align:center; padding:8px 10px; }
+        .cx-input:focus, .cx-select:focus, .cx-number:focus, .cx-textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px ${BRAND}22; }
         .cx-textarea { resize: vertical; min-height: 46px; }
+        .title-textarea, .desc-textarea { font-family: 'Roboto', ui-sans-serif, system-ui, Arial; }
         .title-textarea { overflow:hidden; resize:none; min-height: 46px; }
+
         .scroll-viewport { max-height: 66vh; overflow: auto; }
         .cx-table { width:100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
         .cx-table thead th { position: sticky; top: 0; background:var(--panel); z-index: 2; }
         .cell { padding: 10px 12px; vertical-align: top; }
-        .col-score{ width:76px; } .col-sel{ width:60px; } .col-num{ width:90px; } .col-del{ width:96px; }
+        .col-score{ width:76px; } .col-sel{ width:60px; } .col-num{ width:110px; } .col-del{ width:96px; }
         .cx-chip { display:inline-flex; align-items:center; justify-content:center; min-width:46px; height:46px; font-weight:800; border-radius:999px; color:#fff; }
-        .tooltip { position: relative; cursor: help; }
-        .tooltip .i { background:var(--border); color:var(--text); border-radius:8px; padding:0 6px; font-size:11px }
-        .tooltip:hover .tip { opacity:1; transform: translateY(0); pointer-events:auto; }
-        .tip {
-          position:absolute; left:0; top:100%; margin-top:6px; max-width:280px;
-          background:var(--panel); color:var(--text); border:1px solid var(--border);
-          border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.35; opacity:0; transform: translateY(-4px);
-          pointer-events:none; transition: opacity .12s ease, transform .12s ease; box-shadow: 0 6px 18px rgba(0,0,0,.12);
-        }
+
+        /* Scrollbar */
         .scroll-viewport::-webkit-scrollbar { width: 12px; height: 12px; }
         .scroll-viewport::-webkit-scrollbar-track { background: var(--panel); border-left:1px solid var(--border); }
         .scroll-viewport::-webkit-scrollbar-thumb { background: linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius: 8px; border: 3px solid var(--panel); }
         .scroll-viewport { scrollbar-width: thin; scrollbar-color: ${BRAND} var(--panel); }
+
         /* Drawer */
         .drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 360px; background: var(--panel); border-left: 1px solid var(--border); transform: translateX(100%); transition: transform .2s ease; z-index: 50; padding: 16px; }
         .drawer.open { transform: translateX(0); }
         .drawer h3 { margin: 0 0 10px 0; }
+
+        /* Compact toolbar for Trello area */
+        .toolbar {
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: max-content;
+          align-items: center;
+          gap: 10px;
+        }
+        @media (max-width: 1100px) {
+          .toolbar {
+            grid-auto-flow: row;
+            grid-template-columns: repeat(3, minmax(160px, 1fr));
+          }
+        }
       `}</style>
 
       <div className="wrap">
         {/* Header bar */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr minmax(500px, 900px) auto", alignItems:"center", columnGap:12, marginBottom:12 }}>
+          {/* Title */}
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ width:36, height:36, borderRadius:999, background: BRAND }} />
             <h1 style={{ margin:0, letterSpacing:.3 }}>
               <span>CharterXO </span>
               <span style={{ color: BRAND, fontWeight:800 }}>Backlog Intelligence</span>
             </h1>
           </div>
 
-          {/* Header actions & search */}
-          <div style={{ display:"grid", gridTemplateColumns:"1fr auto auto auto auto", gap:8, alignItems:"center", width:"min(900px, 60vw)" }}>
+          {/* Search & controls */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr auto auto auto", gap:8, alignItems:"center" }}>
             <input
               className="cx-input"
               placeholder="Search title or description…"
@@ -369,26 +370,39 @@ export default function App() {
             />
             <button className="cx-btn" onClick={()=>setShowWeights(s=>!s)}>Weights</button>
             <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark ? "🌙 Dark" : "☀️ Light"}</button>
-            <button className="cx-btn" onClick={saveToCloud}>Save to Cloud</button>
-            <button className="cx-btn" onClick={loadFromCloud}>Load from Cloud</button>
+            <div style={{ display:"flex", gap:8 }}>
+              <button className="cx-btn" onClick={saveToCloud}>Save</button>
+              <button className="cx-btn" onClick={loadFromCloud}>Load</button>
+            </div>
+          </div>
+
+          {/* Logo (top-right) */}
+          <div style={{ justifySelf:"end" }}>
+            <img src="/cxo-logo.png" alt="CharterXO" style={{ height:36, width:36, borderRadius:8, objectFit:"cover" }} />
           </div>
         </div>
 
-        {/* Trello + sorting + bulk actions */}
+        {/* Trello + sorting + bulk actions (compact) */}
         <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:12, marginBottom:12 }}>
-          <div className="actions">
+          {/* Row 1: Trello connection + sorting */}
+          <div className="toolbar" style={{ marginBottom: 10 }}>
             <button className="cx-btn primary" onClick={fetchBoards}>Connect Trello</button>
-            <select className="cx-select" value={boardId} onChange={(e)=>fetchListsFor(e.target.value)} style={{ minWidth:260 }}>
+
+            <select className="cx-select" value={boardId} onChange={(e)=>fetchListsFor(e.target.value)} title="Choose board">
               <option value="">— Choose board —</option>
               {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
-            <select className="cx-select" value={listId} onChange={(e)=>setListId(e.target.value)} style={{ minWidth:240 }}>
+
+            <select className="cx-select" value={listId} onChange={(e)=>setListId(e.target.value)} title="Choose list">
               <option value="">— Choose list —</option>
               {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
+
             <button className="cx-btn" onClick={importFromList}>Import from list</button>
 
-            <select className="cx-select" value={sortKey} onChange={(e)=>setSortKey(e.target.value)} style={{ minWidth:220 }}>
+            <div style={{ width: 12 }} />
+
+            <select className="cx-select" value={sortKey} onChange={(e)=>setSortKey(e.target.value)} title="Sort by">
               <option value="score">Sort by: Priority Score</option>
               <option value="name">Title (A→Z)</option>
               <option value="impact">Impact</option>
@@ -397,13 +411,15 @@ export default function App() {
               <option value="urgency">Urgency</option>
               <option value="align">Alignment</option>
             </select>
-            <select className="cx-select" value={sortDir} onChange={(e)=>setSortDir(e.target.value)} style={{ width:140 }}>
+
+            <select className="cx-select" value={sortDir} onChange={(e)=>setSortDir(e.target.value)} title="Order">
               <option value="desc">High → Low</option>
               <option value="asc">Low → High</option>
             </select>
           </div>
 
-          <div className="actions" style={{ marginTop:10 }}>
+          {/* Row 2: bulk actions */}
+          <div className="toolbar">
             <button className="cx-btn" onClick={selectAll}>Select All</button>
             <button className="cx-btn" onClick={clearSelection}>Clear Selection</button>
             <button className="cx-btn" onClick={selectAllImported}>Select All Imported</button>
@@ -471,22 +487,26 @@ export default function App() {
                     </td>
                     <td className="cell">
                       <textarea
-                        className="cx-textarea"
+                        className="cx-textarea desc-textarea"
                         rows={3}
                         value={r.notes || ""}
                         onChange={(e)=>updateRow(r.id,{ notes:e.target.value })}
                       />
                     </td>
 
-                    {/* Impact */}
+                    {/* Impact dropdown 1–5 */}
                     <td className="cell">
-                      <input className="cx-number" type="number" min="1" max="5" value={r.impact ?? 3}
-                        onChange={(e)=>updateRow(r.id,{ impact:Number(e.target.value) })} />
+                      <select className="cx-select" value={r.impact ?? 3}
+                        onChange={(e)=>updateRow(r.id,{ impact:Number(e.target.value) })}>
+                        {ONE_TO_FIVE.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
                     </td>
-                    {/* Reach */}
+                    {/* Reach dropdown 1–5 */}
                     <td className="cell">
-                      <input className="cx-number" type="number" min="1" max="5" value={r.reach ?? 3}
-                        onChange={(e)=>updateRow(r.id,{ reach:Number(e.target.value) })} />
+                      <select className="cx-select" value={r.reach ?? 3}
+                        onChange={(e)=>updateRow(r.id,{ reach:Number(e.target.value) })}>
+                        {ONE_TO_FIVE.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
                     </td>
                     {/* Effort dropdown */}
                     <td className="cell">
@@ -502,11 +522,14 @@ export default function App() {
                         {URGENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </td>
-                    {/* Alignment */}
+                    {/* Alignment dropdown 1–5 */}
                     <td className="cell">
-                      <input className="cx-number" type="number" min="1" max="5" value={r.align ?? 3}
-                        onChange={(e)=>updateRow(r.id,{ align:Number(e.target.value) })} />
+                      <select className="cx-select" value={r.align ?? 3}
+                        onChange={(e)=>updateRow(r.id,{ align:Number(e.target.value) })}>
+                        {ONE_TO_FIVE.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
                     </td>
+
                     <td className="cell">
                       <button className="cx-btn primary" onClick={()=>removeRow(r.id)}>Delete</button>
                     </td>
