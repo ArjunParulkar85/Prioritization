@@ -10,12 +10,12 @@ const DEFAULT_WEIGHTS = {
 
 // Short definitions for tooltips
 const FACTOR_DEFS = {
-  impact: "Business value if delivered. Consider revenue, cost savings, NPS, risk reduction. (0–5 higher is better)",
-  ttv: "Time-to-Value: how quickly value is realized after starting. (0–5 higher = faster)",
-  feasibility: "Likelihood of successful delivery with current tech, skills, and constraints. (0–5 higher = easier)",
-  data: "Data readiness/quality and access. (0–5 higher = better/cleaner/accessible)",
-  risk: "Regulatory, compliance, security, or brand risk. (0–5 higher = riskier; reversed in score)",
-  align: "Strategic alignment with CharterXO goals and roadmap. (0–5 higher = more aligned)",
+  impact: "Business value if delivered: revenue, cost savings, NPS, risk reduction. (0–5 higher is better)",
+  ttv: "Time-to-Value: how quickly value is realized once started. (0–5 higher = faster)",
+  feasibility: "Likelihood of successful delivery with current tech, skills, constraints. (0–5 higher = easier)",
+  data: "Data readiness/quality and access. (0–5 higher = better, cleaner, accessible)",
+  risk: "Regulatory/compliance/security/brand risk. (0–5 higher = riskier; reversed in score)",
+  align: "Strategic alignment with CharterXO goals and roadmap. (0–5 higher = better aligned)",
   buyin: "Stakeholder enthusiasm and sponsorship. (0–5 higher = stronger support)",
 };
 
@@ -38,12 +38,14 @@ function scoreRow(r, w, total) {
   const value = Math.round(((r.impact ?? 0) + (r.align ?? 0)) * 10);
   return { ...r, score, effort, value };
 }
-function startRow(name = "New Use Case", description = "", seed = 3) {
+function startRow(name = "New Use Case", description = "", seed = 3, imported = false) {
   return {
     id: Math.random().toString(36).slice(2),
-    name, notes: description,
+    name,
+    notes: description,
     impact: seed, ttv: seed, feasibility: seed, data: seed, risk: seed, align: seed, buyin: seed, cost: seed,
     selected: false,
+    imported, // <-- mark rows that came from Trello import
   };
 }
 
@@ -79,8 +81,8 @@ export default function App() {
   const [listId, setListId] = useState("");
 
   // Sorting state
-  const [sortKey, setSortKey] = useState("score"); // score | impact | ttv | feasibility | data | risk | align | buyin | cost | name
-  const [sortDir, setSortDir] = useState("desc");  // asc | desc
+  const [sortKey, setSortKey] = useState("score");
+  const [sortDir, setSortDir] = useState("desc");
 
   useEffect(() => { saveNow({ rows, weights, dark }); }, [rows, weights, dark]);
 
@@ -116,6 +118,21 @@ export default function App() {
     setStatus("🔄 Data reset (local).");
   }
 
+  // --- New bulk helpers for imported cards (in-app only, not Trello) ---
+  function selectAllImported() {
+    setRows(rs => rs.map(r => r.imported ? { ...r, selected: true } : r));
+  }
+  function deleteSelectedLocal() {
+    const count = rows.filter(r => r.selected).length;
+    setRows(rs => rs.filter(r => !r.selected));
+    setStatus(count ? `🗑️ Deleted ${count} selected row(s) locally.` : "No selected rows to delete.");
+  }
+  function deleteAllImportedLocal() {
+    const count = rows.filter(r => r.imported).length;
+    setRows(rs => rs.filter(r => !r.imported));
+    setStatus(count ? `🗑️ Deleted ${count} imported row(s) locally.` : "No imported rows to delete.");
+  }
+
   // Cloud SAVE / LOAD (Firestore via API)
   async function saveToCloud() {
     try {
@@ -138,7 +155,9 @@ export default function App() {
       if (W) setWeights(W);
       if (typeof D === "boolean") setDark(D);
       setStatus("☁️ Loaded from GCP.");
-    } catch (e) { setStatus(`❌ Load failed: ${e.message || e}`); }
+    } catch (e) {
+      setStatus(`❌ Load failed: ${e.message || e}`);
+    }
   }
 
   // Trello calls
@@ -169,7 +188,8 @@ export default function App() {
       const r = await fetch(`/api/trello/lists/${listId}/cards`);
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      const imported = data.map(c => startRow(c.name || "Card", c.desc || "", 3));
+      // Mark imported items with imported: true
+      const imported = data.map(c => startRow(c.name || "Card", c.desc || "", 3, true));
       setRows(prev => [...imported, ...prev]);
       setStatus(`✅ Imported ${imported.length} cards.`);
     } catch (e) { setStatus(`❌ ${e.message || e}`); }
@@ -197,35 +217,50 @@ export default function App() {
 
   const theme = dark
     ? { background:"#0b0b0c", panel:"#0f172a", text:"#e5e7eb", border:"#273244", muted:"#8aa0b2", input:"#0f172a", inputBorder:"#334155" }
-    : { background:"#f8fafc", panel:"#ffffff", text:"#0f172a", border:"#e2e8f0", muted:"#64748b", input:"#ffffff", inputBorder:"#cbd5e1" };
+    : { background:"#f6f7fb", panel:"#ffffff", text:"#0f172a", border:"#e2e8f0", muted:"#64748b", input:"#ffffff", inputBorder:"#cbd5e1" };
 
   return (
-    <div style={{ minHeight:"100vh", background: theme.background, color: theme.text, fontFamily:"Inter, ui-sans-serif, system-ui, Arial", padding:24 }}>
+    <div style={{ minHeight:"100vh", background: theme.background, color: theme.text, fontFamily:"Inter, ui-sans-serif, system-ui, Arial", padding:"12px 12px" }}>
+      {/* polished inputs, full-width layout, and custom scrollbars */}
       <style>{`
-        .cx-btn { padding:8px 12px; border:1px solid ${theme.border}; background:${theme.panel}; color:${theme.text}; border-radius:10px; cursor:pointer; }
-        .cx-btn.primary { background:${BRAND}; color:#fff; border-color:${BRAND}; }
+        :root { --border:${theme.border}; --panel:${theme.panel}; --text:${theme.text}; --muted:${theme.muted}; --brand:${BRAND}; --input:${theme.input}; --inputBorder:${theme.inputBorder}; }
+        .wrap { max-width: min(1900px, 98vw); margin: 0 auto; } /* full width with tiny side gutter */
+        .controls { display:grid; grid-template-columns: repeat(4, minmax(180px, 1fr)) auto; gap:12px; align-items:center; }
+        .cx-btn { padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; cursor:pointer; }
+        .cx-btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
         .cx-btn.ghost { background:transparent; }
         .cx-input, .cx-select, .cx-number, .cx-textarea {
-          width:100%; background:${theme.input}; color:${theme.text};
-          border:1px solid ${theme.inputBorder}; border-radius:10px; padding:8px 10px; outline:none;
-          transition: border-color .15s, box-shadow .15s;
+          width:100%; background:var(--input); color:var(--text);
+          border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none;
+          transition: border-color .15s, box-shadow .15s; line-height:1.2;
         }
-        .cx-input:focus, .cx-select:focus, .cx-number:focus, .cx-textarea:focus { border-color:${BRAND}; box-shadow:0 0 0 3px ${BRAND}22; }
-        .cx-table thead th { position: sticky; top: 0; background:${theme.panel}; z-index: 2; }
-        .cx-chip { display:inline-flex; align-items:center; justify-content:center; min-width:42px; height:42px; font-weight:800; border-radius:999px; color:#fff; }
+        .cx-input:focus, .cx-select:focus, .cx-number:focus, .cx-textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px ${BRAND}22; }
+        .cx-number { width:64px; text-align:center; }
+        .row-actions { display:flex; gap:8px; }
+        .cx-table thead th { position: sticky; top: 0; background:var(--panel); z-index: 2; }
+        .cx-chip { display:inline-flex; align-items:center; justify-content:center; min-width:46px; height:46px; font-weight:800; border-radius:999px; color:#fff; }
         .tooltip { position: relative; cursor: help; }
+        .tooltip .i { background:var(--border); color:var(--text); border-radius:8px; padding:0 6px; font-size:11px }
         .tooltip:hover .tip { opacity:1; transform: translateY(0); pointer-events:auto; }
         .tip {
-          position:absolute; left:0; top:100%; margin-top:6px; max-width:260px;
-          background:${theme.panel}; color:${theme.text}; border:1px solid ${theme.border};
+          position:absolute; left:0; top:100%; margin-top:6px; max-width:280px;
+          background:var(--panel); color:var(--text); border:1px solid var(--border);
           border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.35; opacity:0; transform: translateY(-4px);
           pointer-events:none; transition: opacity .12s ease, transform .12s ease; box-shadow: 0 6px 18px rgba(0,0,0,.12);
         }
+        /* Nice scrollbars (Chrome/Edge/Safari) */
+        .scroll-viewport::-webkit-scrollbar { width: 12px; height: 12px; }
+        .scroll-viewport::-webkit-scrollbar-track { background: var(--panel); border-left:1px solid var(--border); }
+        .scroll-viewport::-webkit-scrollbar-thumb { background: linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius: 8px; border: 3px solid var(--panel); }
+        .scroll-viewport { scrollbar-width: thin; scrollbar-color: ${BRAND} var(--panel); } /* Firefox */
+        .cell { padding: 8px 10px; vertical-align: top; }
+        .nowrap { white-space: nowrap; }
+        .wraptext { white-space: pre-wrap; word-break: break-word; }
       `}</style>
 
-      <div style={{ maxWidth:1300, margin:"0 auto" }}>
+      <div className="wrap">
         {/* Header */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <div style={{ width:36, height:36, borderRadius:999, background: BRAND }} />
             <h1 style={{ margin:0, letterSpacing:.3 }}>
@@ -233,7 +268,7 @@ export default function App() {
               <span style={{ color: BRAND, fontWeight:800 }}>Agentic Prioritization</span>
             </h1>
           </div>
-          <div style={{ display:"flex", gap:8 }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
             <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark ? "🌙 Dark" : "☀️ Light"}</button>
             <button className="cx-btn" onClick={saveToCloud}>Save to Cloud</button>
             <button className="cx-btn" onClick={loadFromCloud}>Load from Cloud</button>
@@ -241,42 +276,53 @@ export default function App() {
           </div>
         </div>
 
-        {/* Trello + Sorting */}
-        <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:12, marginBottom:14, display:"grid", gridTemplateColumns:"auto auto auto auto 1fr", gap:8, alignItems:"center" }}>
-          <button className="cx-btn primary" onClick={fetchBoards}>Connect Trello</button>
-          <select className="cx-select" value={boardId} onChange={(e)=>fetchListsFor(e.target.value)}>
-            <option value="">— Choose board —</option>
-            {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <select className="cx-select" value={listId} onChange={(e)=>setListId(e.target.value)}>
-            <option value="">— Choose list —</option>
-            {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-          <button className="cx-btn" onClick={importFromList}>Import from list</button>
+        {/* Trello + Sorting + Imported controls */}
+        <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:12, marginBottom:12 }}>
+          <div className="controls" style={{ gap:12 }}>
+            <button className="cx-btn primary" onClick={fetchBoards}>Connect Trello</button>
+            <select className="cx-select" value={boardId} onChange={(e)=>fetchListsFor(e.target.value)}>
+              <option value="">— Choose board —</option>
+              {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <select className="cx-select" value={listId} onChange={(e)=>setListId(e.target.value)}>
+              <option value="">— Choose list —</option>
+              {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <button className="cx-btn" onClick={importFromList}>Import from list</button>
 
-          <div style={{ display:"flex", gap:8, justifySelf:"end" }}>
-            <select className="cx-select" value={sortKey} onChange={(e)=>setSortKey(e.target.value)} style={{ width:220 }}>
-              <option value="score">Sort by: Priority Score</option>
-              <option value="name">Title (A→Z)</option>
-              <option value="impact">Impact</option>
-              <option value="ttv">TTV</option>
-              <option value="feasibility">Feasibility</option>
-              <option value="data">Data</option>
-              <option value="risk">Risk (reversed)</option>
-              <option value="align">Alignment</option>
-              <option value="buyin">Buy-in</option>
-              <option value="cost">Cost</option>
-            </select>
-            <select className="cx-select" value={sortDir} onChange={(e)=>setSortDir(e.target.value)} style={{ width:130 }}>
-              <option value="desc">High → Low</option>
-              <option value="asc">Low → High</option>
-            </select>
+            <div style={{ display:"flex", gap:10, justifySelf:"end", minWidth: 340 }}>
+              <select className="cx-select" value={sortKey} onChange={(e)=>setSortKey(e.target.value)} style={{ flex:1 }}>
+                <option value="score">Sort by: Priority Score</option>
+                <option value="name">Title (A→Z)</option>
+                <option value="impact">Impact</option>
+                <option value="ttv">TTV</option>
+                <option value="feasibility">Feasibility</option>
+                <option value="data">Data</option>
+                <option value="risk">Risk (reversed)</option>
+                <option value="align">Alignment</option>
+                <option value="buyin">Buy-in</option>
+                <option value="cost">Cost</option>
+              </select>
+              <select className="cx-select" value={sortDir} onChange={(e)=>setSortDir(e.target.value)} style={{ width:140 }}>
+                <option value="desc">High → Low</option>
+                <option value="asc">Low → High</option>
+              </select>
+            </div>
           </div>
+
+          {/* Imported management */}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
+            <button className="cx-btn" onClick={selectAllImported}>Select All Imported</button>
+            <button className="cx-btn" onClick={deleteSelectedLocal}>Delete Selected (Local)</button>
+            <button className="cx-btn" onClick={deleteAllImportedLocal}>Delete All Imported (Local)</button>
+          </div>
+
+          <div style={{ marginTop:8, color:theme.muted, minHeight:22 }}>{status}</div>
         </div>
 
         {/* Weights with tooltips */}
-        <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:14, marginBottom:14 }}>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:14 }}>
+        <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:14, marginBottom:12 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(140px, 1fr))", gap:14 }}>
             {[
               ["Impact","impact"],["TTV","ttv"],["Feasibility","feasibility"],
               ["Data","data"],["Risk (lower better)","risk"],["Alignment","align"],["Buy-in","buyin"],
@@ -284,7 +330,7 @@ export default function App() {
               <div key={key}>
                 <div className="tooltip" style={{ fontSize:12, color:theme.muted, display:"flex", alignItems:"center", gap:6 }}>
                   <span>{label}</span>
-                  <span style={{ background:theme.border, color:theme.text, borderRadius:6, padding:"0 6px", fontSize:11 }}>i</span>
+                  <span className="i">i</span>
                   <div className="tip">{FACTOR_DEFS[key]}</div>
                 </div>
                 <input type="range" min="0" max="40" value={weights[key]} onChange={(e)=>setWeight(key, e.target.value)} style={{ width:"100%" }} />
@@ -297,59 +343,59 @@ export default function App() {
           </div>
         </div>
 
-        {/* Table with sticky header + new column order */}
+        {/* Table with sticky header + no horizontal scroll */}
         <div style={{ background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, overflow:"hidden" }}>
-          <div style={{ maxHeight:"65vh", overflow:"auto" }}>
+          <div className="scroll-viewport" style={{ maxHeight:"65vh", overflow:"auto" }}>
             <table className="cx-table" style={{ borderCollapse:"separate", borderSpacing:0, width:"100%" }}>
               <thead>
                 <tr style={{ textAlign:"left", color:theme.muted }}>
-                  <th style={{ padding:10, width:70 }}>Score</th>
-                  <th style={{ padding:10, width:56 }}>Sel</th>
-                  <th style={{ padding:10, minWidth:340 }}>Use Case / Trello Title</th>
-                  <th style={{ padding:10, minWidth:420 }}>Description</th>
-                  <th style={{ padding:10, width:90 }}>Impact</th>
-                  <th style={{ padding:10, width:90 }}>TTV</th>
-                  <th style={{ padding:10, width:90 }}>Feas.</th>
-                  <th style={{ padding:10, width:90 }}>Data</th>
-                  <th style={{ padding:10, width:90 }}>Risk</th>
-                  <th style={{ padding:10, width:90 }}>Align</th>
-                  <th style={{ padding:10, width:90 }}>Buy-in</th>
-                  <th style={{ padding:10, width:90 }}>Cost</th>
-                  <th style={{ padding:10, width:70 }}>—</th>
+                  <th className="cell nowrap" style={{ width:76 }}>Score</th>
+                  <th className="cell nowrap" style={{ width:64 }}>Sel</th>
+                  <th className="cell" style={{ minWidth:280 }}>Use Case / Trello Title</th>
+                  <th className="cell" style={{ minWidth:360 }}>Description</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Impact</th>
+                  <th className="cell nowrap" style={{ width:90 }}>TTV</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Feas.</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Data</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Risk</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Align</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Buy-in</th>
+                  <th className="cell nowrap" style={{ width:90 }}>Cost</th>
+                  <th className="cell nowrap" style={{ width:90 }}>—</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map(r => (
                   <tr key={r.id} style={{ borderTop:`1px solid ${theme.border}` }}>
                     {/* Score bubble (left) */}
-                    <td style={{ padding:8 }}>
+                    <td className="cell">
                       <div className="cx-chip" style={{ background: scoreColor(r.score) }}>{r.score}</div>
                     </td>
 
                     {/* Select */}
-                    <td style={{ padding:8, verticalAlign:"top" }}>
+                    <td className="cell">
                       <input type="checkbox" checked={!!r.selected} onChange={(e)=>toggleSelect(r.id, e.target.checked)} />
                     </td>
 
                     {/* Title */}
-                    <td style={{ padding:8 }}>
+                    <td className="cell">
                       <input className="cx-input" value={r.name} onChange={(e)=>updateRow(r.id,{ name:e.target.value })} />
                     </td>
 
                     {/* Description (moved earlier) */}
-                    <td style={{ padding:8 }}>
+                    <td className="cell">
                       <textarea className="cx-textarea" rows={3} value={r.notes||""} onChange={(e)=>updateRow(r.id,{ notes:e.target.value })} />
                     </td>
 
                     {/* Factors */}
                     {["impact","ttv","feasibility","data","risk","align","buyin","cost"].map(k=>(
-                      <td key={k} style={{ padding:8, verticalAlign:"top" }}>
+                      <td key={k} className="cell">
                         <input className="cx-number" type="number" min="0" max="5" value={r[k]??0} onChange={(e)=>updateRow(r.id,{ [k]:Number(e.target.value) })} />
                       </td>
                     ))}
 
                     {/* Delete */}
-                    <td style={{ padding:8 }}>
+                    <td className="cell">
                       <button className="cx-btn primary" onClick={()=>removeRow(r.id)}>Delete</button>
                     </td>
                   </tr>
@@ -360,7 +406,7 @@ export default function App() {
         </div>
 
         {/* Footer actions */}
-        <div style={{ display:"flex", gap:10, marginTop:12 }}>
+        <div style={{ display:"flex", gap:10, marginTop:12, flexWrap:"wrap" }}>
           <button className="cx-btn primary" onClick={addRow}>Add Row</button>
           <button className="cx-btn" onClick={pushSelected}>Push selected to Trello</button>
           <div style={{ color:theme.muted, lineHeight:"36px" }}>{status}</div>
