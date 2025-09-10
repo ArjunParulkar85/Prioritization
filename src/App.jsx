@@ -182,6 +182,9 @@ export default function App() {
   // confirmations (single declaration!)
   const [confirm, setConfirm] = useState({ open: false, type: null, payload: null, message: "" });
 
+  // NEW: force checkbox UI refresh on bulk actions
+  const [selectionEpoch, setSelectionEpoch] = useState(0);
+
   // persist locally
   useEffect(() => { saveNow({ rows, weights, dark }); }, [rows, weights, dark]);
 
@@ -226,23 +229,62 @@ export default function App() {
   const addRow = () => setRows(rs => [startRow(), ...rs]);
   const removeRow = id => setRows(rs => rs.filter(r => r.id !== id));
   const toggleSelect = (id, v) => updateRow(id, { selected: v });
-  const selectAll = () => setRows(rs => rs.map(r => ({ ...r, selected: true })));
-  const clearSelection = () => setRows(rs => rs.map(r => ({ ...r, selected: false })));
-  const selectAllImported = () => setRows(rs => rs.map(r => r.imported ? { ...r, selected: true } : r));
+
+  // ===== Selection helpers (fixed/expanded) =====
+  const bumpEpoch = () => setSelectionEpoch(e => e + 1);
+
+  const selectAll = () => {
+    setRows(prev => prev.map(r => ({ ...r, selected: true })));
+    bumpEpoch();
+    setStatus("✅ Selected all rows.");
+  };
+  const clearSelection = () => {
+    setRows(prev => prev.map(r => ({ ...r, selected: false })));
+    bumpEpoch();
+    setStatus("✅ Cleared selection for all rows.");
+  };
+  const selectAllImported = () => {
+    setRows(prev => prev.map(r => r.imported ? { ...r, selected: true } : r));
+    bumpEpoch();
+    setStatus("✅ Selected all imported rows.");
+  };
+  const selectVisible = () => {
+    const visibleIds = new Set(sorted.map(r => r.id));
+    setRows(prev => prev.map(r => visibleIds.has(r.id) ? { ...r, selected: true } : r));
+    bumpEpoch();
+    setStatus(`✅ Selected ${visibleIds.size} visible row(s).`);
+  };
+  const clearVisible = () => {
+    const visibleIds = new Set(sorted.map(r => r.id));
+    setRows(prev => prev.map(r => visibleIds.has(r.id) ? { ...r, selected: false } : r));
+    bumpEpoch();
+    setStatus(`✅ Cleared selection for ${visibleIds.size} visible row(s).`);
+  };
+
   const deleteSelectedLocal = () => {
-    const n = rows.filter(r => r.selected).length;
-    setRows(rs => rs.filter(r => !r.selected));
-    setStatus(n ? `🗑️ Deleted ${n} selected row(s) locally.` : "No selected rows to delete.");
+    setRows(prev => {
+      const selectedCount = prev.reduce((acc, r) => acc + (r.selected ? 1 : 0), 0);
+      const next = prev.filter(r => !r.selected);
+      setStatus(selectedCount ? `🗑️ Deleted ${selectedCount} selected row(s) locally.` : "No selected rows to delete.");
+      return next;
+    });
+    bumpEpoch();
   };
   const deleteAllImportedLocal = () => {
-    const n = rows.filter(r => r.imported).length;
-    setRows(rs => rs.filter(r => !r.imported));
-    setStatus(n ? `🗑️ Deleted ${n} imported row(s) locally.` : "No imported rows to delete.");
+    setRows(prev => {
+      const importedCount = prev.reduce((acc, r) => acc + (r.imported ? 1 : 0), 0);
+      const next = prev.filter(r => !r.imported);
+      setStatus(importedCount ? `🗑️ Deleted ${importedCount} imported row(s) locally.` : "No imported rows to delete.");
+      return next;
+    });
+    bumpEpoch();
   };
+
   const resetAll = () => {
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
     setDark(true); setWeights(DEFAULT_WEIGHTS);
     setRows([startRow(), startRow("Example Feature", "Describe the value here")]);
+    bumpEpoch();
     setStatus("🔄 Data reset (local).");
   };
 
@@ -271,6 +313,7 @@ export default function App() {
         if (W) setWeights(W);
         if (typeof D === "boolean") setDark(D);
         if (!silent) setStatus("☁️ Loaded from GCP.");
+        bumpEpoch();
       } else {
         if (!silent) setStatus("ℹ️ No cloud snapshot yet; using local data.");
       }
@@ -325,6 +368,7 @@ export default function App() {
         return base;
       });
       setRows(prev => [...imported, ...prev]);
+      bumpEpoch();
       setStatus(`✅ Imported ${imported.length} cards.`);
     } catch (e) { setStatus(`❌ ${e.message || e}`); }
   }
@@ -412,6 +456,9 @@ export default function App() {
     ? { background: "#0b0b0c", panel: "#0f172a", text: "#e5e7eb", border: "#273244", muted: "#8aa0b2", input: "#0f172a", inputBorder: "#334155" }
     : { background: "#f6f7fb", panel: "#ffffff", text: "#0f172a", border: "#e2e8f0", muted: "#64748b", input: "#ffffff", inputBorder: "#cbd5e1" };
 
+  // computed: are all visible selected?
+  const allVisibleSelected = sorted.length > 0 && sorted.every(r => !!r.selected);
+
   return (
     <div style={{ minHeight: "100vh", background: theme.background, color: theme.text, fontFamily: "Inter, ui-sans-serif, system-ui, Arial", padding: "12px 12px" }}>
       <style>{`
@@ -424,6 +471,9 @@ export default function App() {
         .cx-btn { padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; cursor:pointer; }
         .cx-btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
         .cx-btn.ghost { background:transparent; }
+
+        /* Make the checkbox visually obvious and on-brand */
+        input[type="checkbox"] { accent-color: var(--brand); transform: scale(1.1); }
 
         .cx-input, .cx-select, .cx-number, .cx-textarea {
           background:var(--input); color:var(--text);
@@ -442,7 +492,7 @@ export default function App() {
         .cx-table { width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; }
         .cx-table thead th { position:sticky; top:0; background:var(--panel); z-index:2; }
         .cell { padding:10px 12px; vertical-align:top; }
-        .col-score{ width:76px; } .col-sel{ width:60px; } .col-num{ width:110px; } .col-del{ width:96px; }
+        .col-score{ width:76px; } .col-sel{ width:80px; } .col-num{ width:110px; } .col-del{ width:96px; }
         .cx-chip { display:inline-flex; align-items:center; justify-content:center; min-width:46px; height:46px; font-weight:800; border-radius:999px; color:#fff; }
 
         .th-help { display:inline-flex; align-items:center; gap:6px; }
@@ -486,7 +536,6 @@ export default function App() {
             <button className="cx-btn" onClick={() => setDark(d => !d)}>{dark ? "🌙 Dark" : "☀️ Light"}</button>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="cx-btn" onClick={() => saveToCloud(false)}>Save</button>
-              {/* Load intentionally removed */}
             </div>
           </div>
 
@@ -527,12 +576,19 @@ export default function App() {
             </select>
           </div>
 
+          {/* Bulk actions — includes Visible-only variants */}
           <div className="toolbar">
+            <button className="cx-btn" onClick={selectVisible}>Select Visible</button>
+            <button className="cx-btn" onClick={clearVisible}>Clear Visible</button>
+
             <button className="cx-btn" onClick={selectAll}>Select All</button>
-            <button className="cx-btn" onClick={clearSelection}>Clear Selection</button>
+            <button className="cx-btn" onClick={clearSelection}>Clear All</button>
+
             <button className="cx-btn" onClick={selectAllImported}>Select All Imported</button>
+
             <button className="cx-btn" onClick={deleteSelectedLocal}>Delete Selected (Local)</button>
             <button className="cx-btn" onClick={deleteAllImportedLocal}>Delete All Imported (Local)</button>
+
             <button className="cx-btn ghost" onClick={resetAll}>Reset Data</button>
           </div>
 
@@ -546,7 +602,17 @@ export default function App() {
               <thead>
                 <tr style={{ textAlign: "left", color: theme.muted }}>
                   <th className="cell col-score">Score</th>
-                  <th className="cell col-sel">Sel</th>
+                  <th className="cell col-sel">
+                    {/* Master checkbox toggles visible rows */}
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={(e) => e.target.checked ? selectVisible() : clearVisible()}
+                      />
+                      Sel
+                    </label>
+                  </th>
                   <th className="cell">Use Case / Trello Title</th>
                   <th className="cell">Description</th>
                   <th className="cell col-num">
@@ -569,12 +635,16 @@ export default function App() {
               </thead>
               <tbody>
                 {sorted.map(r => (
-                  <tr key={r.id} style={{ borderTop: `1px solid ${theme.border}` }}>
+                  <tr key={`${r.id}-${selectionEpoch}`} style={{ borderTop: `1px solid ${theme.border}` }}>
                     <td className="cell">
                       <div className="cx-chip" style={{ background: colorForScore(r.score) }}>{r.score}</div>
                     </td>
                     <td className="cell">
-                      <input type="checkbox" checked={!!r.selected} onChange={(e) => toggleSelect(r.id, e.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={!!r.selected}
+                        onChange={(e) => toggleSelect(r.id, e.target.checked)}
+                      />
                     </td>
                     <td className="cell">
                       <textarea
