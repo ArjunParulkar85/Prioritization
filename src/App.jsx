@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 
-/* =========================================
+/* =========================
    Constants & Utilities
-========================================= */
+========================= */
 const BRAND = "#D76400";
 const STORAGE_KEY = "cxo_prioritizer_v2";
+const AUTH_KEY = "cxo_auth_ok";
 const DEFAULT_WEIGHTS = { wI: 1, wR: 1, wE: 1, wU: 1, wA: 1 };
 
 const ONE_TO_FIVE = [1, 2, 3, 4, 5];
@@ -22,17 +23,19 @@ const URGENCY_OPTIONS = [
   { label: "Critical", value: 4 },
 ];
 
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-function hexToRgb(hex) { const m = hex.replace("#",""); const n = parseInt(m,16); return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 }; }
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function hexToRgb(hex){ const m=hex.replace("#",""); const n=parseInt(m,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
 function colorForScore(score){
-  const stops = ["#FF0000","#FF7F00","#FFEA00","#FF00FF","#8B00FF","#007BFF"];
-  const t=clamp01(score/100); const seg=Math.min(stops.length-2, Math.floor(t*(stops.length-1)));
-  const lt=(t*(stops.length-1))-seg; const a=hexToRgb(stops[seg]); const b=hexToRgb(stops[seg+1]);
+  const stops=["#FF0000","#FF7F00","#FFEA00","#FF00FF","#8B00FF","#007BFF"];
+  const t=clamp01(score/100);
+  const seg=Math.min(stops.length-2, Math.floor(t*(stops.length-1)));
+  const lt=(t*(stops.length-1))-seg;
+  const a=hexToRgb(stops[seg]), b=hexToRgb(stops[seg+1]);
   const r=Math.round(a.r+(b.r-a.r)*lt), g=Math.round(a.g+(b.g-a.g)*lt), bl=Math.round(a.b+(b.b-a.b)*lt);
   return `rgb(${r},${g},${bl})`;
 }
 
-// Weighted score: ((wI*I)*(wR*R) + (wU*U) + (wA*A)) / (wE*E)  → 0..100
+// ((wI*I)*(wR*R) + (wU*U) + (wA*A)) / (wE*E) → 0..100
 function computeScore(row, W){
   const I=Number(row.impact||0), R=Number(row.reach||0), E=Math.max(1,Number(row.effort||1)),
         U=Number(row.urgency||0), A=Number(row.align||0);
@@ -51,9 +54,9 @@ function parseMetaFromDescription(desc=""){
   const idx=desc.lastIndexOf(META_PREFIX);
   if(idx<0) return null;
   const tail=desc.slice(idx).trim();
-  const mm=tail.match(/\[CXO\]\s*(.*)$/);
-  if(!mm) return null;
-  const kv=mm[1].split(";").map(s=>s.trim()).filter(Boolean);
+  const m=tail.match(/\[CXO\]\s*(.*)$/);
+  if(!m) return null;
+  const kv=m[1].split(";").map(s=>s.trim()).filter(Boolean);
   const o={};
   kv.forEach(p=>{
     const [k,v]=(p||"").split("=").map(x=>x?.trim());
@@ -63,10 +66,9 @@ function parseMetaFromDescription(desc=""){
   });
   return o;
 }
-
 function makeTempUID(){
   const t=new Date(); const y=String(t.getFullYear()).slice(-2);
-  const m=("0"+(t.getMonth()+1)).slice(-2); const d=("0"+t.getDate()).slice(-2);
+  const m=("0"+(t.getMonth()+1)).slice(2); const d=("0"+t.getDate()).slice(2);
   const s=Math.random().toString(36).slice(2,6).toUpperCase();
   return `CXO-${y}${m}${d}-${s}`;
 }
@@ -84,21 +86,20 @@ function startRow(name="New Use Case", notes="", imported=false, extra={}){
 const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||"null"); } catch { return null; } };
 const saveNow = (payload) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); } catch {} };
 
-/* =========================================
-   Hooks & Small UI bits
-========================================= */
 function useMedia(query){
   const [m,setM]=useState(false);
   useEffect(()=>{
     const mq=window.matchMedia(query);
-    const onChange=()=>setM(mq.matches);
-    onChange();
-    mq.addEventListener?.("change",onChange);
-    return ()=>mq.removeEventListener?.("change",onChange);
+    const on=()=>setM(mq.matches); on();
+    mq.addEventListener?.("change",on);
+    return ()=>mq.removeEventListener?.("change",on);
   },[query]);
   return m;
 }
 
+/* =========================
+   Small UI Pieces
+========================= */
 function HeaderWithHelp({label, tip}){
   return (
     <div className="th-help">
@@ -110,14 +111,14 @@ function HeaderWithHelp({label, tip}){
     </div>
   );
 }
-function ConfirmModal({open, title, message, confirmText="Confirm", onConfirm, onCancel}){
+function ConfirmModal({open,title,message,confirmText="Confirm",onConfirm,onCancel}){
   if(!open) return null;
   return (
     <div className="modal-backdrop">
       <div className="modal">
         <h3 style={{marginTop:0}}>{title}</h3>
-        <p style={{marginTop:6, marginBottom:18, lineHeight:1.4}}>{message}</p>
-        <div style={{display:"flex", gap:8, justifyContent:"flex-end"}}>
+        <p style={{marginTop:6,marginBottom:18,lineHeight:1.45}}>{message}</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button className="cx-btn" onClick={onCancel}>Cancel</button>
           <button className="cx-btn primary" onClick={onConfirm}>{confirmText}</button>
         </div>
@@ -125,41 +126,37 @@ function ConfirmModal({open, title, message, confirmText="Confirm", onConfirm, o
     </div>
   );
 }
-const TrashIcon = ({size=18}) => (
+const TrashIcon=({size=18})=>(
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <path d="M9 4h6m-9 3h12m-1 0-.8 12.1a2 2 0 0 1-2 1.9H9.8a2 2 0 0 1-2-1.9L7 7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
   </svg>
 );
 
-/* =========================================
+/* =========================
    Mobile Card Row
-========================================= */
-function RowCard({r,theme,updateRow,removeRow,setConfirm,toggleSelect}){
+========================= */
+function RowCard({r,theme,updateRow,setConfirm,toggleSelect}){
   return (
-    <div className="card" style={{border:`1px solid ${theme.border}`, background:theme.panel}}>
+    <div className="card" style={{border:`1px solid ${theme.border}`,background:theme.panel}}>
       <div className="card-top">
         <div className="chip" style={{background:colorForScore(r.score)}}>{r.score}</div>
         <label className="sel">
-          <input type="checkbox" checked={!!r.selected} onChange={e=>toggleSelect(r.id, e.target.checked)}/>
+          <input type="checkbox" checked={!!r.selected} onChange={e=>toggleSelect(r.id, e.target.checked)} />
           Select
         </label>
         <button className="icon-btn danger" title="Delete row"
-          onClick={()=>setConfirm({
-            open:true,type:"delete-row",
-            payload:{id:r.id, title:r.name},
-            message:`Delete “${r.name || "Untitled"}”? This removes it from the app (not Trello).`
-          })}
+          onClick={()=>setConfirm({open:true,type:"delete-row",payload:{id:r.id,title:r.name},message:`Delete “${r.name||"Untitled"}”? This removes it locally (not Trello).`})}
         ><TrashIcon/></button>
       </div>
 
       <textarea className="cx-textarea title-textarea" rows={1} value={r.name}
         onChange={e=>updateRow(r.id,{name:e.target.value})}
-        onInput={e=>{ e.target.style.height="auto"; e.target.style.height=(e.target.scrollHeight)+"px"; }}
+        onInput={e=>{e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px";}}
         placeholder="Use Case / Trello Title" />
 
       <textarea className="cx-textarea desc-textarea" rows={3} value={r.notes||""}
         onChange={e=>updateRow(r.id,{notes:e.target.value})}
-        placeholder="Description"/>
+        placeholder="Description" />
 
       <div className="uid">UID: {r.idShort ?? r.uid ?? "—"}</div>
 
@@ -194,11 +191,11 @@ function RowCard({r,theme,updateRow,removeRow,setConfirm,toggleSelect}){
   );
 }
 
-/* =========================================
+/* =========================
    App
-========================================= */
+========================= */
 export default function App(){
-  const saved = typeof window!=="undefined" ? loadSaved() : null;
+  const saved=typeof window!=="undefined"? loadSaved(): null;
 
   const [dark,setDark]=useState(()=>saved?.dark ?? true);
   const [showWeights,setShowWeights]=useState(false);
@@ -224,12 +221,16 @@ export default function App(){
   // confirmations
   const [confirm,setConfirm]=useState({open:false,type:null,payload:null,message:""});
 
-  // selection re-render
+  // selection visual sync
   const [selectionEpoch,setSelectionEpoch]=useState(0);
   const bumpEpoch=()=>setSelectionEpoch(e=>e+1);
 
-  // layout
-  const isMobile = useMedia("(max-width: 767px)");
+  // auth gate
+  const [authed,setAuthed]=useState(()=>!!localStorage.getItem(AUTH_KEY));
+  const [pw,setPw]=useState("");
+
+  // responsive
+  const isMobile=useMedia("(max-width: 767px)");
 
   // persist local
   useEffect(()=>{ saveNow({rows,weights,dark}); },[rows,weights,dark]);
@@ -238,17 +239,16 @@ export default function App(){
   // autosave every 5 min
   useEffect(()=>{ const id=setInterval(()=>saveToCloud(true), 5*60*1000); return ()=>clearInterval(id); },[rows,weights,dark]);
 
-  const scored = useMemo(()=>rows.map(r=>({...r, score: computeScore(r,weights)})),[rows,weights]);
+  const scored=useMemo(()=>rows.map(r=>({...r, score:computeScore(r,weights)})),[rows,weights]);
   const searched=useMemo(()=>{
-    const q=query.trim().toLowerCase();
-    if(!q) return scored;
-    return scored.filter(r=>(r.name||"").toLowerCase().includes(q) || (r.notes||"").toLowerCase().includes(q));
+    const q=query.trim().toLowerCase(); if(!q) return scored;
+    return scored.filter(r=>(r.name||"").toLowerCase().includes(q)||(r.notes||"").toLowerCase().includes(q));
   },[scored,query]);
   const sorted=useMemo(()=>{
     const arr=[...searched];
     arr.sort((a,b)=>{
-      const ax = sortKey==="name" ? String(a.name||"").toLowerCase() : a[sortKey];
-      const bx = sortKey==="name" ? String(b.name||"").toLowerCase() : b[sortKey];
+      const ax=sortKey==="name"? String(a.name||"").toLowerCase(): a[sortKey];
+      const bx=sortKey==="name"? String(b.name||"").toLowerCase(): b[sortKey];
       if(ax<bx) return sortDir==="asc"?-1:1;
       if(ax>bx) return sortDir==="asc"?1:-1;
       return 0;
@@ -256,34 +256,17 @@ export default function App(){
     return arr;
   },[searched,sortKey,sortDir]);
 
-  // mutators
   const setW=(k,v)=>setWeights(w=>({...w,[k]:Number(v)}));
   const updateRow=(id,patch)=>setRows(rs=>rs.map(r=>r.id===id?{...r,...patch}:r));
   const removeRow=(id)=>setRows(rs=>rs.filter(r=>r.id!==id));
   const toggleSelect=(id,v)=>updateRow(id,{selected:v});
-  const addRow=()=>setRows(rs=>[startRow(),...rs]);
+  const addRow=()=>setRows(rs=>[startRow(), ...rs]);
 
-  // selection helpers
-  const selectVisible=()=>{ const vis=new Set(sorted.map(r=>r.id)); setRows(prev=>prev.map(r=>vis.has(r.id)?{...r,selected:true}:r)); bumpEpoch(); setStatus(`✅ Selected ${sorted.length} visible row(s).`); };
-  const clearVisible =()=>{ const vis=new Set(sorted.map(r=>r.id)); setRows(prev=>prev.map(r=>vis.has(r.id)?{...r,selected:false}:r)); bumpEpoch(); setStatus(`✅ Cleared selection for ${sorted.length} visible row(s).`); };
-  const selectAll    =()=>{ setRows(prev=>prev.map(r=>({...r,selected:true}))); bumpEpoch(); setStatus("✅ Selected all rows."); };
-  const clearAllSel  =()=>{ setRows(prev=>prev.map(r=>({...r,selected:false}))); bumpEpoch(); setStatus("✅ Cleared selection for all rows."); };
-  const selectAllImported=()=>{ setRows(prev=>prev.map(r=>r.imported?{...r,selected:true}:r)); bumpEpoch(); setStatus("✅ Selected all imported rows."); };
+  const selectAll =()=>{ setRows(prev=>prev.map(r=>({...r,selected:true}))); bumpEpoch(); setStatus("✅ Selected all rows."); };
+  const clearAll  =()=>{ setRows(prev=>prev.map(r=>({...r,selected:false}))); bumpEpoch(); setStatus("✅ Cleared selection."); };
+  const deleteSelectedLocal =()=> setConfirm({open:true,type:"delete-selected",message:"Delete all selected rows from the app (not Trello)? This cannot be undone."});
 
-  const deleteSelectedLocal=()=>{ setConfirm({
-    open:true,type:"delete-selected",payload:null,
-    message:"Delete all currently selected rows from the app (not Trello)? This cannot be undone."
-  }); };
-  const deleteAllImportedLocal=()=>{ setConfirm({
-    open:true,type:"delete-imported",payload:null,
-    message:"Delete all rows that were imported from Trello (locally only)?"
-  }); };
-  const resetAll=()=>{ setConfirm({
-    open:true,type:"reset-all",payload:null,
-    message:"Reset local data to a clean slate? This clears your current rows and weights (cloud data stays intact)."
-  }); };
-
-  /* ---------- Cloud (GCP) ---------- */
+  /* ------- Cloud (GCP) ------- */
   async function saveToCloud(silent=false){
     try{
       const r=await fetch("/api/storage/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:{rows,weights,dark}})});
@@ -295,14 +278,13 @@ export default function App(){
     try{
       const r=await fetch("/api/storage/load");
       if(!r.ok){ if(!silent) setStatus(`❌ Load failed: ${r.status}`); return; }
-      const j=await r.json();
-      const {rows:R,weights:W,dark:D}=j?.data||{};
+      const j=await r.json(); const {rows:R,weights:W,dark:D}=j?.data||{};
       if(Array.isArray(R)&&R.length){ setRows(R); if(W) setWeights(W); if(typeof D==="boolean") setDark(D); bumpEpoch(); if(!silent) setStatus("☁️ Loaded from GCP."); }
       else if(!silent) setStatus("ℹ️ No cloud snapshot yet; using local data.");
     }catch(e){ if(!silent) setStatus(`❌ Load failed: ${e.message||e}`); }
   }
 
-  /* ---------- Trello ---------- */
+  /* ------- Trello ------- */
   async function fetchBoards(){
     setStatus("Connecting…");
     try{
@@ -333,8 +315,7 @@ export default function App(){
       const imported=data.map(c=>{
         const parsed=parseMetaFromDescription(c.desc||"");
         const base=startRow(c.name||"Card", c.desc||"", true,{
-          trelloId:c.id, idShort:c.idShort, shortLink:c.shortLink,
-          uid:c.idShort ?? parsed?.uid ?? undefined
+          trelloId:c.id, idShort:c.idShort, shortLink:c.shortLink, uid:c.idShort ?? parsed?.uid ?? undefined
         });
         if(parsed){
           base.impact=parsed.impact ?? base.impact;
@@ -349,21 +330,18 @@ export default function App(){
     }catch(e){ setStatus(`❌ ${e.message||e}`); }
   }
 
-  /* ---------- Mixed Create/Update with Copy Fallback ---------- */
   function confirmPushSelected(){
-    const selected = rows.filter(r=>r.selected);
+    const selected=rows.filter(r=>r.selected);
     if(!selected.length) return setStatus("⚠️ Select one or more rows.");
-    const toCreate = selected.filter(r=>!r.trelloId);
-    const toUpdate = selected.filter(r=>!!r.trelloId || !!r.shortLink);
+    const toCreate=selected.filter(r=>!r.trelloId);
+    const toUpdate=selected.filter(r=>!!r.trelloId || !!r.shortLink);
     if(toCreate.length && !listId) return setStatus("⚠️ Choose a destination list to create new cards.");
     const parts=[]; if(toCreate.length) parts.push(`create ${toCreate.length}`); if(toUpdate.length) parts.push(`update ${toUpdate.length}`);
     setConfirm({open:true,type:"push-mixed",payload:{toCreate,toUpdate},message:`This will ${parts.join(" and ")} card(s) in Trello. Proceed?`});
   }
-
-  async function pushSelectedMixed({toCreate=[], toUpdate=[]}){
-    let created=0, updated=0, copied=0, failed=0; let firstError="";
-
-    // CREATE new
+  async function pushSelectedMixed({toCreate=[],toUpdate=[]}){
+    let created=0,updated=0,copied=0,failed=0; let firstError="";
+    // create
     for(const r of toCreate){
       try{
         if(!listId) throw new Error("No destination list selected");
@@ -380,27 +358,23 @@ export default function App(){
         }
       }catch{ failed++; }
     }
-
-    // UPDATE existing with COPY fallback
+    // update with copy fallback
     for(const r of toUpdate){
       try{
-        const idForUrl=r.trelloId || r.shortLink;
-        if(!idForUrl){ failed++; continue; }
+        const idForUrl=r.trelloId||r.shortLink; if(!idForUrl){ failed++; continue; }
         const safeId=encodeURIComponent(idForUrl);
         const uid=r.idShort ?? r.uid ?? makeTempUID();
         const desc=`${r.notes||""}${r.notes? "\n\n": ""}${buildMetaLine({impact:r.impact,reach:r.reach,effort:r.effort,urgency:r.urgency,align:r.align,uid})}`;
-
-        const body={name:r.name, desc}; if(listId) body.idList=listId;
+        const body={name:r.name,desc}; if(listId) body.idList=listId;
         let res=await fetch(`/api/trello/cards/${safeId}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-
         if(!res.ok){
           if(listId){
             const copyRes=await fetch("/api/trello/cards",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-              idCardSource:idForUrl, idList:listId, keepFromSource:"all", name:r.name, desc
+              idCardSource:idForUrl,idList:listId,keepFromSource:"all",name:r.name,desc
             })});
             if(!copyRes.ok){ const t=await copyRes.text().catch(()=> ""); if(!firstError) firstError=t||copyRes.statusText; throw new Error(); }
             const newCard=await copyRes.json(); copied++;
-            updateRow(r.id,{trelloId:newCard.id,idShort:newCard.idShort,shortLink:newCard.shortLink,uid:newCard.idShort ?? uid, imported:true});
+            updateRow(r.id,{trelloId:newCard.id,idShort:newCard.idShort,shortLink:newCard.shortLink,uid:newCard.idShort ?? uid,imported:true});
           }else{
             const t=await res.text().catch(()=> ""); if(!firstError) firstError=t||res.statusText; throw new Error();
           }
@@ -409,89 +383,120 @@ export default function App(){
         }
       }catch{ failed++; }
     }
-
     setStatus(`✅ Created ${created}${copied?`, copied ${copied}`:""}${updated?`, updated ${updated}`:""}${failed?`, failed ${failed}${firstError?` (first error: ${String(firstError).slice(0,120)}…)`:""}`:""}.`);
   }
-
-  /* ---------- Reorder ---------- */
   async function pushOrderToTrello(ordered){
     setStatus("Reordering cards on Trello…");
     let firstError="";
     try{
       for(let i=ordered.length-1;i>=0;i--){
-        const r=ordered[i]; const idForUrl=r.trelloId || r.shortLink; if(!idForUrl) continue;
-        const safeId=encodeURIComponent(idForUrl);
-        const res=await fetch(`/api/trello/cards/${safeId}/pos`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({pos:"top"})});
+        const r=ordered[i]; const idForUrl=r.trelloId||r.shortLink; if(!idForUrl) continue;
+        const res=await fetch(`/api/trello/cards/${encodeURIComponent(idForUrl)}/pos`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({pos:"top"})});
         if(!res.ok){ const t=await res.text().catch(()=> ""); if(!firstError) firstError=t||res.statusText; throw new Error(); }
       }
       setStatus(`✅ Reordered ${ordered.length} card(s) on Trello to match the app.`);
-    }catch(e){ setStatus(`❌ Reorder failed: ${firstError || e.message || e}`); }
+    }catch(e){ setStatus(`❌ Reorder failed: ${firstError||e.message||e}`); }
   }
 
-  // theme
   const theme = dark
     ? { background:"#0b0b0c", panel:"#0f172a", text:"#e5e7eb", border:"#273244", muted:"#8aa0b2", input:"#0f172a", inputBorder:"#334155" }
     : { background:"#f6f7fb", panel:"#ffffff", text:"#0f172a", border:"#e2e8f0", muted:"#64748b", input:"#ffffff", inputBorder:"#cbd5e1" };
 
-  const allVisibleSelected = sorted.length>0 && sorted.every(r=>!!r.selected);
-
-  /* ---------- Confirm handlers ---------- */
+  /* ------- Confirm handlers ------- */
   async function handleConfirm(){
-    const c=confirm;
-    setConfirm({open:false});
+    const c=confirm; setConfirm({open:false});
     if(c.type==="push-mixed"){ await pushSelectedMixed(c.payload||{toCreate:[],toUpdate:[]}); return; }
     if(c.type==="push-order"){ const ordered=c.payload?.ordered||[]; await pushOrderToTrello(ordered); return; }
     if(c.type==="delete-row"){ const id=c.payload?.id; if(id) removeRow(id); return; }
     if(c.type==="delete-selected"){ setRows(prev=>prev.filter(r=>!r.selected)); bumpEpoch(); setStatus("🗑️ Deleted selected row(s) locally."); return; }
-    if(c.type==="delete-imported"){ setRows(prev=>prev.filter(r=>!r.imported)); bumpEpoch(); setStatus("🗑️ Deleted all imported rows (local)."); return; }
-    if(c.type==="reset-all"){ try{localStorage.removeItem(STORAGE_KEY);}catch{}; setDark(true); setWeights(DEFAULT_WEIGHTS); setRows([startRow(), startRow("Example Feature","Describe the value")]); bumpEpoch(); setStatus("🔄 Data reset (local)."); return; }
   }
 
+  /* ======= AUTH GATE ======= */
+  if(!authed){
+    return (
+      <div style={{minHeight:"100vh",display:"grid",placeItems:"center",background:theme.background,color:theme.text}}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+          .gate{ width:min(440px,92vw); background:${theme.panel}; border:1px solid ${theme.border}; border-radius:16px; padding:24px; text-align:center; }
+          .gate h1{ margin:10px 0 6px; letter-spacing:.4px; }
+          .gate p{ margin:0 0 16px; color:${theme.muted}; }
+          .cx-input{ background:${theme.input}; color:${theme.text}; border:1px solid ${theme.inputBorder}; border-radius:12px; padding:12px 14px; width:100%; outline:none; }
+          .cx-input:focus{ border-color:${BRAND}; box-shadow:0 0 0 3px ${BRAND}22; }
+          .cx-btn{ padding:12px 14px; border:1px solid ${theme.border}; background:${BRAND}; color:#fff; border-radius:12px; cursor:pointer; width:100%; font-weight:600; }
+        `}</style>
+        <div className="gate">
+          <img src="/cxo-logo.png" alt="CXO" style={{width:56,height:56,borderRadius:10,objectFit:"cover"}}/>
+          <h1>Backlog Intelligence</h1>
+          <p>Please enter the password to continue.</p>
+          <div style={{display:"grid",gap:10,marginTop:10}}>
+            <input className="cx-input" type="password" placeholder="Password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ if(pw==="CXOIntel"){ localStorage.setItem(AUTH_KEY,"1"); setAuthed(true);} }}}/>
+            <button className="cx-btn" onClick={()=>{ if(pw==="CXOIntel"){ localStorage.setItem(AUTH_KEY,"1"); setAuthed(true);} }}>Enter</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ======= APP VIEW ======= */
   return (
-    <div style={{minHeight:"100vh", background:theme.background, color:theme.text, fontFamily:"Inter, ui-sans-serif, system-ui, Arial", padding:"12px 12px"}}>
+    <div style={{minHeight:"100vh", background:theme.background, color:theme.text, fontFamily:"Inter, ui-sans-serif, system-ui, Arial", padding:"12px"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-        :root { --panel:${theme.panel}; --text:${theme.text}; --border:${theme.border}; --muted:${theme.muted}; --brand:${BRAND}; --input:${theme.input}; --inputBorder:${theme.inputBorder}; }
+        :root{ --panel:${theme.panel}; --text:${theme.text}; --border:${theme.border}; --muted:${theme.muted}; --brand:${BRAND}; --input:${theme.input}; --inputBorder:${theme.inputBorder}; }
         *{ box-sizing:border-box; }
-        .wrap{ max-width:min(1920px,98.5vw); margin:0 auto; }
+        .wrap{ max-width:1400px; margin:0 auto; overflow-x:hidden; } /* prevent horizontal scroll */
 
         .toolbar{ display:grid; grid-auto-flow:column; grid-auto-columns:max-content; align-items:center; gap:10px; }
-        @media (max-width: 1024px){ .toolbar{ grid-auto-flow:row; grid-template-columns:repeat(3, minmax(160px,1fr)); } }
-        @media (max-width: 767px){ .toolbar{ grid-template-columns:repeat(2, 1fr); } }
+        .row{ display:grid; gap:10px; }
+        .row.controls-1{ grid-template-columns: repeat(4, minmax(180px, 1fr)); }
+        .row.controls-2{ grid-template-columns: 1.2fr 1fr .9fr; }
+        .row.controls-3{ grid-template-columns: repeat(3, minmax(160px, 1fr)); }
+
+        @media (max-width: 1100px){
+          .row.controls-1{ grid-template-columns: repeat(3, minmax(160px,1fr)); }
+          .row.controls-2{ grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 767px){
+          .row.controls-1{ grid-template-columns: repeat(2, minmax(150px,1fr)); }
+          .row.controls-2{ grid-template-columns: 1fr; }
+          .row.controls-3{ grid-template-columns: repeat(2, minmax(140px,1fr)); }
+        }
 
         .cx-btn{ padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; cursor:pointer; }
         .cx-btn.primary{ background:var(--brand); color:#fff; border-color:var(--brand); }
         .cx-btn.ghost{ background:transparent; }
-        .icon-btn{ width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:10px; cursor:pointer; }
-        .icon-btn.danger{ color:#fff; background:var(--brand); border-color:var(--brand); }
-
-        input[type="checkbox"]{ accent-color:var(--brand); transform:scale(1.1); }
+        .icon-btn{ width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:10px;cursor:pointer; }
+        .icon-btn.danger{ color:#fff;background:var(--brand);border-color:var(--brand); }
 
         .cx-input,.cx-select,.cx-number,.cx-textarea{ background:var(--input); color:var(--text); border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none; transition:border-color .15s, box-shadow .15s; line-height:1.25; }
-        .cx-select{ width:auto; }
-        .cx-input,.cx-textarea{ width:100%; }
-        .cx-number{ width:62px; text-align:center; padding:8px 10px; }
-        .cx-input:focus,.cx-select:focus,.cx-number:focus,.cx-textarea:focus{ border-color:var(--brand); box-shadow:0 0 0 3px ${BRAND}22; }
-        .cx-textarea{ resize:vertical; min-height:46px; }
-        .title-textarea,.desc-textarea{ font-family:'Roboto', ui-sans-serif, system-ui, Arial; }
+        .cx-select{ width:100%; }
+        .cx-textarea{ width:100%; resize:vertical; min-height:46px; }
+        .title-textarea,.desc-textarea{ font-family:'Roboto', ui-sans-serif, system-ui, Arial; overflow-wrap:anywhere; }
         .title-textarea{ overflow:hidden; resize:none; min-height:46px; }
-        .title-textarea,.desc-textarea{ overflow-wrap:anywhere; }
 
         .scroll-viewport{ max-height:66vh; overflow:auto; }
-        .scroll-viewport::-webkit-scrollbar{ width:12px; height:12px; }
+        /* orange scrollbar */
+        .scroll-viewport::-webkit-scrollbar{ width:12px;height:12px; }
         .scroll-viewport::-webkit-scrollbar-track{ background:var(--panel); border-left:1px solid var(--border); }
         .scroll-viewport::-webkit-scrollbar-thumb{ background:linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius:8px; border:3px solid var(--panel); }
         .scroll-viewport{ scrollbar-width:thin; scrollbar-color:${BRAND} var(--panel); }
 
-        .cx-table{ width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; }
+        /* Table tweaks to avoid horizontal scroll */
+        .cx-table{ width:100%; border-collapse:separate; border-spacing:0; table-layout:auto; }
         .cx-table thead th{ position:sticky; top:0; background:var(--panel); z-index:2; }
         .cell{ padding:10px 12px; vertical-align:top; }
-        .col-score{ width:76px; } .col-sel{ width:80px; } .col-num{ width:110px; } .col-del{ width:64px; }
-        .cx-chip{ display:inline-flex; align-items:center; justify-content:center; min-width:46px; height:46px; font-weight:800; border-radius:999px; color:#fff; }
+        .col-score{ width:62px; }
+        .col-sel{ width:70px; }
+        .col-num{ width:110px; }
+        .col-del{ width:54px; }
+        .name-col{ min-width:260px; }
+        .desc-col{ min-width:320px; }
+
+        .cx-chip{ display:inline-flex;align-items:center;justify-content:center; min-width:42px;height:42px;font-weight:800;border-radius:999px;color:#fff; }
 
         .th-help{ display:inline-flex; align-items:center; gap:6px; }
         .bubble-wrap{ position:relative; display:inline-flex; align-items:center; }
-        .bubble{ width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:var(--border); color:var(--text); font-size:11px; line-height:1; opacity:.9; }
+        .bubble{ width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--border);color:var(--text);font-size:11px;line-height:1;opacity:.9; }
         .tooltip-box{ position:absolute; left:0; top:120%; min-width:220px; max-width:320px; background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.35; box-shadow:0 8px 22px rgba(0,0,0,.18); opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity .12s, transform .12s; z-index:5; }
         .bubble-wrap:hover .tooltip-box{ opacity:1; transform:translateY(0); pointer-events:auto; }
 
@@ -499,44 +504,36 @@ export default function App(){
         .drawer-backdrop.open{ opacity:1; pointer-events:auto; }
         .drawer{ position:fixed; right:0; top:0; bottom:0; width:380px; background:var(--panel); border-left:1px solid var(--border); transform:translateX(100%); transition:transform .2s ease; z-index:50; padding:16px; overflow:auto; }
         .drawer.open{ transform:translateX(0); }
-        @media (max-width: 767px){
-          .drawer{ width:100%; }
-        }
+        @media (max-width: 767px){ .drawer{ width:100%; } }
 
         .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:60; }
         .modal{ width:min(560px,92vw); background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
 
-        /* Mobile cards */
-        .card{ border-radius:14px; padding:12px; margin:10px 0; }
+        /* Cards (mobile) */
+        .card{ border-radius:14px; padding:12px; margin:12px 0; }
         .card-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
-        .card-top .chip{ width:42px; height:42px; border-radius:999px; font-weight:800; color:#fff; display:flex; align-items:center; justify-content:center; }
+        .card-top .chip{ width:38px;height:38px;border-radius:999px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center; }
         .card-top .sel{ display:flex; align-items:center; gap:8px; color:var(--muted); }
-
         .uid{ font-size:12px; color:var(--muted); margin:8px 0 4px; }
         .factors{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; }
         .factors label{ display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--muted); }
-        .factors .align{ grid-column: 1 / -1; }
-        .mobile-actions{ position:sticky; bottom:0; background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:10px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+        .factors .align{ grid-column:1 / -1; }
       `}</style>
 
       <div className="wrap">
-        {/* HEADER */}
-        <div style={{display:"grid", gridTemplateColumns:"auto 1fr minmax(520px, 980px) auto", alignItems:"center", columnGap:12, marginBottom:12}}>
-          <img src="/cxo-logo.png" alt="CharterXO" style={{height:36,width:36,borderRadius:8,objectFit:"cover"}}/>
-          <h1 style={{margin:0, letterSpacing:.3}}><span>CharterXO </span><span style={{color:BRAND,fontWeight:800}}>Backlog Intelligence</span></h1>
-
-          <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:8,alignItems:"center"}}>
-            <input className="cx-input" placeholder="Search title or description…" value={query} onChange={e=>setQuery(e.target.value)}/>
-            <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
-            <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark?"🌙 Dark":"☀️ Light"}</button>
-            <button className="cx-btn" onClick={()=>saveToCloud(false)}>Save</button>
-          </div>
-          <div />
+        {/* Header */}
+        <div style={{display:"grid",gridTemplateColumns:"auto 1fr auto auto auto",alignItems:"center",gap:12,marginBottom:12}}>
+          <img src="/cxo-logo.png" alt="CXO" style={{height:36,width:36,borderRadius:8,objectFit:"cover"}}/>
+          <h1 style={{margin:0,letterSpacing:.3}}><span>CharterXO </span><span style={{color:BRAND,fontWeight:800}}>Backlog Intelligence</span></h1>
+          <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
+          <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark?"🌙 Dark":"☀️ Light"}</button>
+          <button className="cx-btn" onClick={()=>saveToCloud(false)}>Save</button>
         </div>
 
-        {/* CONTROLS */}
-        <div style={{background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, padding:12, marginBottom:12}}>
-          <div className="toolbar" style={{marginBottom:10}}>
+        {/* Controls */}
+        <div style={{background:theme.panel,border:`1px solid ${theme.border}`,borderRadius:14,padding:12,marginBottom:12}}>
+          {/* Row 1 */}
+          <div className="row controls-1" style={{marginBottom:10}}>
             <button className="cx-btn primary" onClick={fetchBoards}>Connect Trello</button>
             <select className="cx-select" value={boardId} onChange={e=>fetchListsFor(e.target.value)} title="Choose board">
               <option value="">— Choose board —</option>
@@ -547,55 +544,56 @@ export default function App(){
               {lists.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
             <button className="cx-btn" onClick={importFromList}>Import from list</button>
-
-            <div style={{width:12}}/>
-
-            <select className="cx-select" value={sortKey} onChange={e=>setSortKey(e.target.value)}>
-              <option value="score">Sort by: Priority Score</option>
-              <option value="name">Title (A→Z)</option>
-              <option value="impact">Impact</option>
-              <option value="reach">Reach</option>
-              <option value="effort">Effort</option>
-              <option value="urgency">Urgency</option>
-              <option value="align">Alignment</option>
-            </select>
-            <select className="cx-select" value={sortDir} onChange={e=>setSortDir(e.target.value)}>
-              <option value="desc">High → Low</option>
-              <option value="asc">Low → High</option>
-            </select>
           </div>
 
-          <div className="toolbar">
-            <button className="cx-btn" onClick={selectVisible}>Select Visible</button>
-            <button className="cx-btn" onClick={clearVisible}>Clear Visible</button>
+          {/* Row 2 */}
+          <div className="row controls-2" style={{marginBottom:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr .8fr",gap:10}}>
+              <select className="cx-select" value={sortKey} onChange={e=>setSortKey(e.target.value)}>
+                <option value="score">Sort by: Priority Score</option>
+                <option value="name">Title (A→Z)</option>
+                <option value="impact">Impact</option>
+                <option value="reach">Reach</option>
+                <option value="effort">Effort</option>
+                <option value="urgency">Urgency</option>
+                <option value="align">Alignment</option>
+              </select>
+              <select className="cx-select" value={sortDir} onChange={e=>setSortDir(e.target.value)}>
+                <option value="desc">High → Low</option>
+                <option value="asc">Low → High</option>
+              </select>
+            </div>
+            <input className="cx-input" placeholder="Search title or description…" value={query} onChange={e=>setQuery(e.target.value)}/>
+          </div>
+
+          {/* Row 3: simplified selection controls */}
+          <div className="row controls-3">
             <button className="cx-btn" onClick={selectAll}>Select All</button>
-            <button className="cx-btn" onClick={clearAllSel}>Clear All</button>
-            <button className="cx-btn" onClick={selectAllImported}>Select All Imported</button>
+            <button className="cx-btn" onClick={clearAll}>Clear Selection</button>
             <button className="cx-btn" onClick={deleteSelectedLocal}>Delete Selected (Local)</button>
-            <button className="cx-btn" onClick={deleteAllImportedLocal}>Delete All Imported (Local)</button>
-            <button className="cx-btn ghost" onClick={resetAll}>Reset Data</button>
           </div>
 
-          <div style={{marginTop:8, color:theme.muted, minHeight:22}}>{status}</div>
+          <div style={{marginTop:8,color:theme.muted,minHeight:22}}>{status}</div>
         </div>
 
-        {/* DATA VIEW */}
+        {/* Data view */}
         {!isMobile ? (
-          /* ---------- TABLE (desktop / large tablet) ---------- */
-          <div style={{background:theme.panel, border:`1px solid ${theme.border}`, borderRadius:14, overflow:"hidden"}}>
+          <div style={{background:theme.panel,border:`1px solid ${theme.border}`,borderRadius:14,overflow:"hidden"}}>
             <div className="scroll-viewport">
               <table className="cx-table">
                 <thead>
-                  <tr style={{textAlign:"left", color:theme.muted}}>
+                  <tr style={{textAlign:"left",color:theme.muted}}>
                     <th className="cell col-score">Score</th>
                     <th className="cell col-sel">
                       <label style={{display:"inline-flex",alignItems:"center",gap:8}}>
-                        <input type="checkbox" checked={sorted.length>0 && sorted.every(r=>!!r.selected)} onChange={e=>e.target.checked?selectVisible():clearVisible()}/>
+                        <input type="checkbox"
+                          checked={sorted.length>0 && sorted.every(r=>!!r.selected)}
+                          onChange={e=>e.target.checked? selectAll(): clearAll()} />
                         Sel
                       </label>
                     </th>
-                    <th className="cell">Use Case / Trello Title</th>
-                    <th className="cell">Description</th>
+                    <th className="cell name-col">Use Case / Trello Title</th>
+                    <th className="cell desc-col">Description</th>
                     <th className="cell col-num"><HeaderWithHelp label="Impact" tip="How much this moves key business goals AND solves a real user problem. 1=min, 5=max."/></th>
                     <th className="cell col-num"><HeaderWithHelp label="Reach" tip="How many users will be affected. 1=few, 5=all/most."/></th>
                     <th className="cell col-num"><HeaderWithHelp label="Effort" tip="Total team work. XS=1, S=2, M=3, L=5, XL=8. Higher effort lowers score."/></th>
@@ -611,12 +609,12 @@ export default function App(){
                         <div className="cx-chip" style={{background:colorForScore(r.score)}}>{r.score}</div>
                       </td>
                       <td className="cell">
-                        <input type="checkbox" checked={!!r.selected} onChange={e=>toggleSelect(r.id, e.target.checked)}/>
+                        <input type="checkbox" checked={!!r.selected} onChange={e=>toggleSelect(r.id, e.target.checked)} />
                       </td>
                       <td className="cell">
                         <textarea className="cx-textarea title-textarea" rows={1} value={r.name}
                           onChange={e=>updateRow(r.id,{name:e.target.value})}
-                          onInput={e=>{ e.target.style.height="auto"; e.target.style.height=(e.target.scrollHeight)+"px"; }} />
+                          onInput={e=>{ e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px"; }} />
                       </td>
                       <td className="cell">
                         <textarea className="cx-textarea desc-textarea" rows={3} value={r.notes||""}
@@ -650,11 +648,7 @@ export default function App(){
                       </td>
                       <td className="cell">
                         <button className="icon-btn danger" title="Delete row"
-                          onClick={()=>setConfirm({
-                            open:true,type:"delete-row",
-                            payload:{id:r.id, title:r.name},
-                            message:`Delete “${r.name || "Untitled"}”? This removes it from the app (not Trello).`
-                          })}
+                          onClick={()=>setConfirm({open:true,type:"delete-row",payload:{id:r.id,title:r.name},message:`Delete “${r.name||"Untitled"}”? This removes it locally (not Trello).`})}
                         ><TrashIcon/></button>
                       </td>
                     </tr>
@@ -662,29 +656,38 @@ export default function App(){
                 </tbody>
               </table>
             </div>
+
+            {/* Bottom actions (desktop) */}
+            <div style={{display:"flex",gap:10,justifyContent:"space-between",padding:"10px 12px"}}>
+              <div style={{display:"flex",gap:10}}>
+                <button className="cx-btn primary" onClick={addRow}>Add Row</button>
+                <button className="cx-btn" onClick={confirmPushSelected}>Push Selected to Trello</button>
+                <button className="cx-btn" onClick={()=>{
+                  const ordered=sorted.filter(r=>r.imported && (r.trelloId||r.shortLink));
+                  if(!ordered.length) return setStatus("No imported cards with Trello IDs to reorder.");
+                  setConfirm({open:true,type:"push-order",payload:{ordered},message:`Reorder ${ordered.length} card(s) on Trello to match this view?`});
+                }}>Push Order to Trello</button>
+              </div>
+              <div style={{color:theme.muted}} />
+            </div>
           </div>
         ) : (
-          /* ---------- CARD LIST (mobile) ---------- */
+          /* Mobile list */
           <div>
             {sorted.map(r=>(
               <RowCard key={`${r.id}-${selectionEpoch}`} r={r} theme={theme}
-                updateRow={updateRow} removeRow={removeRow} setConfirm={setConfirm} toggleSelect={toggleSelect} />
+                updateRow={updateRow} setConfirm={setConfirm} toggleSelect={toggleSelect}/>
             ))}
-            {/* Sticky bottom action bar on mobile */}
-            <div className="mobile-actions">
+            <div style={{position:"sticky",bottom:0,background:theme.panel,border:`1px solid ${theme.border}`,borderRadius:14,padding:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <button className="cx-btn primary" onClick={addRow}>Add Row</button>
               <button className="cx-btn" onClick={confirmPushSelected}>Push Selected</button>
-              <button className="cx-btn" onClick={()=>{
-                const ordered=sorted.filter(r=>r.imported && (r.trelloId || r.shortLink));
-                if(!ordered.length) return setStatus("No imported cards with Trello IDs to reorder.");
-                setConfirm({open:true,type:"push-order",payload:{ordered},message:`Reorder ${ordered.length} card(s) on Trello to match this view?`});
-              }}>Push Order</button>
+              <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
               <button className="cx-btn" onClick={()=>saveToCloud(false)}>Save</button>
             </div>
           </div>
         )}
 
-        {/* DRAWER */}
+        {/* Weights Drawer */}
         <div className={`drawer-backdrop ${showWeights?"open":""}`} onClick={()=>setShowWeights(false)} />
         <div className={`drawer ${showWeights?"open":""}`}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -707,7 +710,7 @@ export default function App(){
           <div style={{fontSize:12,color:theme.muted}}>Tip: set all to 1 for neutral; increase a slider to emphasize that factor.</div>
         </div>
 
-        {/* CONFIRM MODALS */}
+        {/* Confirmation modal */}
         <ConfirmModal
           open={confirm.open}
           title={
@@ -715,8 +718,6 @@ export default function App(){
             confirm.type==="push-order" ? "Reorder Trello Cards" :
             confirm.type==="delete-row" ? "Delete Row" :
             confirm.type==="delete-selected" ? "Delete Selected (Local)" :
-            confirm.type==="delete-imported" ? "Delete All Imported (Local)" :
-            confirm.type==="reset-all" ? "Reset Local Data" :
             "Confirm"
           }
           message={confirm.message}
