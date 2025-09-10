@@ -230,7 +230,7 @@ export default function App() {
   const removeRow = id => setRows(rs => rs.filter(r => r.id !== id));
   const toggleSelect = (id, v) => updateRow(id, { selected: v });
 
-  // ===== Selection helpers (fixed/expanded) =====
+  // ===== Selection helpers =====
   const bumpEpoch = () => setSelectionEpoch(e => e + 1);
 
   const selectAll = () => {
@@ -373,41 +373,37 @@ export default function App() {
     } catch (e) { setStatus(`❌ ${e.message || e}`); }
   }
 
-  /* ---------- Confirmations ---------- */
+  /* ---------- Mixed Create/Update Flow ---------- */
   function confirmPushSelected() {
-    const chosen = sorted.filter(r => r.selected && !r.trelloId);
-    if (!listId) return setStatus("⚠️ Choose a destination list first.");
-    if (!chosen.length) return setStatus("⚠️ Select one or more local rows to create.");
-    setConfirm({
-      open: true,
-      type: "push-create",
-      payload: { chosen },
-      message: `This will create ${chosen.length} card(s) in the selected Trello list. Proceed?`,
-    });
-  }
-  function confirmPushOrder() {
-    const ordered = sorted.filter(r => r.imported && r.trelloId);
-    if (!listId) return setStatus("⚠️ Choose a list first.");
-    if (!ordered.length) return setStatus("No imported cards with Trello IDs to reorder.");
-    setConfirm({
-      open: true,
-      type: "push-order",
-      payload: { ordered },
-      message: `This will reorder ${ordered.length} card(s) in Trello to match the order shown here. Proceed?`,
-    });
+    const selected = rows.filter(r => r.selected);
+    if (!selected.length) return setStatus("⚠️ Select one or more rows.");
+    const toCreate = selected.filter(r => !r.trelloId);
+    const toUpdate = selected.filter(r => !!r.trelloId);
+
+    if (toCreate.length && !listId) {
+      // Need a destination list to create new cards
+      return setStatus("⚠️ Choose a destination list to create new cards.");
+    }
+
+    const parts = [];
+    if (toCreate.length) parts.push(`create ${toCreate.length}`);
+    if (toUpdate.length) parts.push(`update ${toUpdate.length}`);
+    const msg = `This will ${parts.join(" and ")} Trello card(s). Proceed?`;
+    setConfirm({ open: true, type: "push-mixed", payload: { toCreate, toUpdate }, message: msg });
   }
 
-  async function pushSelectedToTrello(chosen) {
-    setStatus("Creating Trello cards…");
-    let ok = 0, fail = 0;
-    for (const r of chosen) {
+  async function pushSelectedMixed({ toCreate = [], toUpdate = [] }) {
+    let created = 0, updated = 0, failed = 0;
+
+    // Create new cards
+    for (const r of toCreate) {
       try {
         let uid = r.uid || makeTempUID();
         const metaLine = buildMetaLine({
           impact: r.impact, reach: r.reach, effort: r.effort,
           urgency: r.urgency, align: r.align, uid
         });
-        let desc = `${r.notes || ""}${r.notes ? "\n\n" : ""}${metaLine}`;
+        const desc = `${r.notes || ""}${r.notes ? "\n\n" : ""}${metaLine}`;
 
         const res = await fetch("/api/trello/cards", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -415,9 +411,9 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
         const card = await res.json();
-        ok++;
+        created++;
 
-        // replace temp UID with Trello idShort if available
+        // Replace temp UID with Trello idShort/shortLink if available
         if (card?.id && (card.idShort || card.shortLink)) {
           const trueUid = card.idShort ?? card.shortLink;
           const newMeta = buildMetaLine({
@@ -429,13 +425,46 @@ export default function App() {
             method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ desc: newDesc })
           }).catch(() => {});
-          updateRow(r.id, { trelloId: card.id, idShort: card.idShort, shortLink: card.shortLink, uid: trueUid, imported: true });
+          updateRow(r.id, {
+            trelloId: card.id, idShort: card.idShort, shortLink: card.shortLink,
+            uid: trueUid, imported: true
+          });
         }
-      } catch { fail++; }
+      } catch {
+        failed++;
+      }
     }
-    setStatus(`✅ Created ${ok} card(s)${fail ? `, ${fail} failed` : ''}.`);
+
+    // Update existing cards
+    for (const r of toUpdate) {
+      try {
+        const uid = r.idShort ?? r.uid ?? makeTempUID();
+        const metaLine = buildMetaLine({
+          impact: r.impact, reach: r.reach, effort: r.effort,
+          urgency: r.urgency, align: r.align, uid
+        });
+        const desc = `${r.notes || ""}${r.notes ? "\n\n" : ""}${metaLine}`;
+
+        const body = { name: r.name, desc };
+        if (listId) body.idList = listId; // optionally move to selected list
+
+        const res = await fetch(`/api/trello/cards/${r.trelloId}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(await res.text());
+        updated++;
+
+        updateRow(r.id, { uid, imported: true });
+      } catch {
+        failed++;
+      }
+    }
+
+    setStatus(`✅ Created ${created}, updated ${updated}${failed ? `, failed ${failed}` : ""}.`);
   }
 
+  /* ---------- Reorder ---------- */
   async function pushOrderToTrello(ordered) {
     setStatus("Reordering cards on Trello…");
     try {
@@ -705,7 +734,16 @@ export default function App() {
         <div className="actions" style={{ marginTop: 12 }}>
           <button className="cx-btn primary" onClick={addRow}>Add Row</button>
           <button className="cx-btn" onClick={confirmPushSelected}>Push selected to Trello</button>
-          <button className="cx-btn" onClick={confirmPushOrder}>Push Order to Trello</button>
+          <button className="cx-btn" onClick={() => {
+            const ordered = sorted.filter(r => r.imported && r.trelloId);
+            if (!ordered.length) return setStatus("No imported cards with Trello IDs to reorder.");
+            setConfirm({
+              open: true,
+              type: "push-order",
+              payload: { ordered },
+              message: `This will reorder ${ordered.length} card(s) in Trello to match the order shown here. Proceed?`,
+            });
+          }}>Push Order to Trello</button>
           <div style={{ color: theme.muted, lineHeight: "36px" }}>{status}</div>
         </div>
       </div>
@@ -735,14 +773,14 @@ export default function App() {
 
       {/* Confirm modals */}
       <ConfirmModal
-        open={confirm.open && confirm.type === "push-create"}
-        title="Create Trello Cards"
+        open={confirm.open && confirm.type === "push-mixed"}
+        title="Sync Selected with Trello"
         message={confirm.message}
         onCancel={() => setConfirm({ open: false })}
         onConfirm={async () => {
-          const chosen = confirm.payload?.chosen || [];
+          const payload = confirm.payload || { toCreate: [], toUpdate: [] };
           setConfirm({ open: false });
-          await pushSelectedToTrello(chosen);
+          await pushSelectedMixed(payload);
         }}
       />
       <ConfirmModal
