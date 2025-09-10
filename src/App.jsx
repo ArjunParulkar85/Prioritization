@@ -68,7 +68,7 @@ function parseMetaFromDescription(desc=""){
 }
 function makeTempUID(){
   const t=new Date(); const y=String(t.getFullYear()).slice(-2);
-  const m=("0"+(t.getMonth()+1)).slice(2); const d=("0"+t.getDate()).slice(2);
+  const m=("0"+(t.getMonth()+1)).slice(-2); const d=("0"+t.getDate()).slice(-2);
   const s=Math.random().toString(36).slice(2,6).toUpperCase();
   return `CXO-${y}${m}${d}-${s}`;
 }
@@ -129,6 +129,21 @@ function ConfirmModal({open,title,message,confirmText="Confirm",onConfirm,onCanc
 const TrashIcon=({size=18})=>(
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <path d="M9 4h6m-9 3h12m-1 0-.8 12.1a2 2 0 0 1-2 1.9H9.8a2 2 0 0 1-2-1.9L7 7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+  </svg>
+);
+const SunIcon=({size=18})=>(
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zm9-10v-2h-3v2h3zm-3.95 6.95l1.41 1.41 1.8-1.79-1.42-1.42-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6zM4.22 18.36l1.8 1.79 1.41-1.41-1.79-1.8-1.42 1.42zM11 1h2v3h-2V1z" />
+  </svg>
+);
+const MoonIcon=({size=18})=>(
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <path d="M21 12.79A9 9 0 0111.21 3a7 7 0 100 14 9 9 0 009.79-4.21z" />
+  </svg>
+);
+const DoorIcon=({size=18})=>(
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <path d="M13 3H5a2 2 0 00-2 2v14a2 2 0 002 2h8V3zm2 0v18h4a2 2 0 002-2V5a2 2 0 00-2-2h-4zM8 11h4v2H8v-2z" />
   </svg>
 );
 
@@ -417,7 +432,7 @@ export default function App(){
       <div style={{minHeight:"100vh",display:"grid",placeItems:"center",background:theme.background,color:theme.text}}>
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-          .gate{ width:min(440px,92vw); background:${theme.panel}; border:1px solid ${theme.border}; border-radius:16px; padding:24px; text-align:center; }
+          .gate{ width:min(440px,92vw); background:${theme.panel}; border:1px solid ${theme.border}; border-radius:16px; padding:24px; text-align:center; font-family: Roboto, system-ui, -apple-system, Segoe UI, Arial, sans-serif; }
           .gate h1{ margin:10px 0 6px; letter-spacing:.4px; }
           .gate p{ margin:0 0 16px; color:${theme.muted}; }
           .cx-input{ background:${theme.input}; color:${theme.text}; border:1px solid ${theme.inputBorder}; border-radius:12px; padding:12px 14px; width:100%; outline:none; }
@@ -444,19 +459,28 @@ export default function App(){
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
         :root{ --panel:${theme.panel}; --text:${theme.text}; --border:${theme.border}; --muted:${theme.muted}; --brand:${BRAND}; --input:${theme.input}; --inputBorder:${theme.inputBorder}; }
         *{ box-sizing:border-box; }
-        .wrap{ max-width:1400px; margin:0 auto; overflow-x:hidden; } /* prevent horizontal scroll */
+        html, body { overflow-x: hidden; }
 
-        .toolbar{ display:grid; grid-auto-flow:column; grid-auto-columns:max-content; align-items:center; gap:10px; }
+        .wrap{ max-width:1280px; margin:0 auto; } /* clamp width to remove horizontal scroll */
+
+        /* Header */
+        .hdr{ display:grid; grid-template-columns:auto 1fr auto auto auto; align-items:center; gap:12px; margin-bottom:12px; }
+        .hdr h1{ margin:0; font-weight:800; letter-spacing:.2px; font-size:clamp(18px, 2.6vw, 28px); }
+        .icon-btn{ width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:50%;cursor:pointer; }
+        .icon-btn:hover{ filter:brightness(1.06); }
+
+        /* Controls */
         .row{ display:grid; gap:10px; }
         .row.controls-1{ grid-template-columns: repeat(4, minmax(180px, 1fr)); }
         .row.controls-2{ grid-template-columns: 1.2fr 1fr .9fr; }
         .row.controls-3{ grid-template-columns: repeat(3, minmax(160px, 1fr)); }
-
         @media (max-width: 1100px){
+          .hdr{ grid-template-columns:auto 1fr auto auto; }
           .row.controls-1{ grid-template-columns: repeat(3, minmax(160px,1fr)); }
           .row.controls-2{ grid-template-columns: 1fr 1fr; }
         }
         @media (max-width: 767px){
+          .hdr{ grid-template-columns:auto 1fr auto auto; }
           .row.controls-1{ grid-template-columns: repeat(2, minmax(150px,1fr)); }
           .row.controls-2{ grid-template-columns: 1fr; }
           .row.controls-3{ grid-template-columns: repeat(2, minmax(140px,1fr)); }
@@ -465,10 +489,8 @@ export default function App(){
         .cx-btn{ padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; cursor:pointer; }
         .cx-btn.primary{ background:var(--brand); color:#fff; border-color:var(--brand); }
         .cx-btn.ghost{ background:transparent; }
-        .icon-btn{ width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:10px;cursor:pointer; }
-        .icon-btn.danger{ color:#fff;background:var(--brand);border-color:var(--brand); }
 
-        .cx-input,.cx-select,.cx-number,.cx-textarea{ background:var(--input); color:var(--text); border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none; transition:border-color .15s, box-shadow .15s; line-height:1.25; }
+        .cx-input,.cx-select,.cx-textarea{ background:var(--input); color:var(--text); border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none; transition:border-color .15s, box-shadow .15s; line-height:1.25; }
         .cx-select{ width:100%; }
         .cx-textarea{ width:100%; resize:vertical; min-height:46px; }
         .title-textarea,.desc-textarea{ font-family:'Roboto', ui-sans-serif, system-ui, Arial; overflow-wrap:anywhere; }
@@ -481,7 +503,7 @@ export default function App(){
         .scroll-viewport::-webkit-scrollbar-thumb{ background:linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius:8px; border:3px solid var(--panel); }
         .scroll-viewport{ scrollbar-width:thin; scrollbar-color:${BRAND} var(--panel); }
 
-        /* Table tweaks to avoid horizontal scroll */
+        /* Table (no horizontal scroll) */
         .cx-table{ width:100%; border-collapse:separate; border-spacing:0; table-layout:auto; }
         .cx-table thead th{ position:sticky; top:0; background:var(--panel); z-index:2; }
         .cell{ padding:10px 12px; vertical-align:top; }
@@ -522,12 +544,18 @@ export default function App(){
 
       <div className="wrap">
         {/* Header */}
-        <div style={{display:"grid",gridTemplateColumns:"auto 1fr auto auto auto",alignItems:"center",gap:12,marginBottom:12}}>
+        <div className="hdr">
           <img src="/cxo-logo.png" alt="CXO" style={{height:36,width:36,borderRadius:8,objectFit:"cover"}}/>
-          <h1 style={{margin:0,letterSpacing:.3}}><span>CharterXO </span><span style={{color:BRAND,fontWeight:800}}>Backlog Intelligence</span></h1>
+          <h1><span>CharterXO </span><span style={{color:BRAND,fontWeight:900}}>Backlog Intelligence</span></h1>
           <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
-          <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark?"🌙 Dark":"☀️ Light"}</button>
-          <button className="cx-btn" onClick={()=>saveToCloud(false)}>Save</button>
+          {/* sun / moon toggle */}
+          <button className="icon-btn" title={dark ? "Light mode" : "Dark mode"} aria-label="Toggle dark mode" onClick={()=>setDark(d=>!d)}>
+            {dark ? <SunIcon/> : <MoonIcon/>}
+          </button>
+          {/* logout */}
+          <button className="icon-btn" title="Log out" aria-label="Log out" onClick={()=>{ localStorage.removeItem(AUTH_KEY); setAuthed(false); }}>
+            <DoorIcon/>
+          </button>
         </div>
 
         {/* Controls */}
@@ -647,7 +675,7 @@ export default function App(){
                         </select>
                       </td>
                       <td className="cell">
-                        <button className="icon-btn danger" title="Delete row"
+                        <button className="icon-btn" style={{background:BRAND,borderColor:BRAND,color:"#fff"}} title="Delete row"
                           onClick={()=>setConfirm({open:true,type:"delete-row",payload:{id:r.id,title:r.name},message:`Delete “${r.name||"Untitled"}”? This removes it locally (not Trello).`})}
                         ><TrashIcon/></button>
                       </td>
