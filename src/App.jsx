@@ -150,6 +150,7 @@ export default function App(){
   // confirmations
   const [confirm, setConfirm] = useState({ open:false, type:null, payload:null, message:"" });
 
+  // always persist to localStorage when anything changes
   useEffect(()=>{ saveNow({rows,weights,dark}); },[rows,weights,dark]);
 
   const scored = useMemo(()=>rows.map(r=>({ ...r, score: computeScore(r,weights).score })),[rows,weights]);
@@ -199,28 +200,50 @@ export default function App(){
     setStatus("🔄 Data reset (local).");
   }
 
-  // cloud
-  async function saveToCloud(){
+  // ---------- Cloud (GCP Firestore via API) ----------
+  // silent flag to avoid status spam during auto load/save
+  async function saveToCloud(silent=false){
     try{
-      const r=await fetch("/api/storage/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:{rows,weights,dark}})});
+      const r=await fetch("/api/storage/save",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({data:{rows,weights,dark}})
+      });
       const j=await r.json();
-      setStatus(r.ok? "☁️ Saved to GCP." : `❌ Save failed: ${j.error||r.status}`);
-    }catch(e){ setStatus(`❌ Save failed: ${e.message||e}`); }
+      if(!silent) setStatus(r.ok? "☁️ Saved to GCP." : `❌ Save failed: ${j.error||r.status}`);
+    }catch(e){ if(!silent) setStatus(`❌ Save failed: ${e.message||e}`); }
   }
-  async function loadFromCloud(){
+  async function loadFromCloud(silent=false){
     try{
       const r=await fetch("/api/storage/load");
+      if(!r.ok){
+        if(!silent) setStatus(`❌ Load failed: ${r.status}`);
+        return;
+      }
       const j=await r.json();
-      if(!r.ok) return setStatus(`❌ Load failed: ${j.error||r.status}`);
-      const { rows:R, weights:W, dark:D } = j.data || {};
-      if(R) setRows(R);
-      if(W) setWeights(W);
-      if(typeof D==="boolean") setDark(D);
-      setStatus("☁️ Loaded from GCP.");
-    }catch(e){ setStatus(`❌ Load failed: ${e.message||e}`); }
+      const { rows:R, weights:W, dark:D } = j?.data || {};
+      // Only apply if cloud actually has something
+      if(Array.isArray(R) && R.length){
+        setRows(R);
+        if(W) setWeights(W);
+        if(typeof D==="boolean") setDark(D);
+        if(!silent) setStatus("☁️ Loaded from GCP.");
+      } else {
+        if(!silent) setStatus("ℹ️ No cloud snapshot yet; using local data.");
+      }
+    }catch(e){ if(!silent) setStatus(`❌ Load failed: ${e.message||e}`); }
   }
 
-  // trello
+  // Auto-load from GCP on first mount (silent)
+  useEffect(()=>{ loadFromCloud(true); },[]);
+
+  // Auto-save to GCP every 5 minutes (silent)
+  useEffect(()=>{
+    const id=setInterval(()=>{ saveToCloud(true); }, 5*60*1000);
+    return ()=>clearInterval(id);
+  },[rows,weights,dark]);
+
+  // ---------- Trello ----------
   async function fetchBoards(){
     setStatus("Connecting…");
     try{
@@ -249,7 +272,6 @@ export default function App(){
       if(!r.ok) throw new Error(await r.text());
       const data=await r.json();
       const imported = data.map(c=>{
-        // parse CXO metadata if present
         const parsed=parseMetaFromDescription(c.desc||"");
         const base = startRow(c.name||"Card", c.desc||"", true, {
           trelloId: c.id,
@@ -272,6 +294,7 @@ export default function App(){
   }
 
   // confirmations
+  const [confirm, setConfirm] = useState({ open:false, type:null, payload:null, message:"" });
   function confirmPushSelected(){
     const chosen=sorted.filter(r=>r.selected && !r.trelloId);
     if(!listId) return setStatus("⚠️ Choose a destination list first.");
@@ -306,7 +329,6 @@ export default function App(){
         });
         let desc = `${r.notes || ""}${r.notes ? "\n\n" : ""}${metaLine}`;
 
-        // create
         const res = await fetch("/api/trello/cards",{
           method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ idList:listId, name:r.name, desc })
@@ -315,7 +337,6 @@ export default function App(){
         const card = await res.json();
         ok++;
 
-        // if Trello gave us idShort, patch metadata line to use it
         if(card?.id && (card.idShort || card.shortLink)){
           const trueUid = card.idShort ?? card.shortLink;
           const newMeta = buildMetaLine({
@@ -424,8 +445,8 @@ export default function App(){
             <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
             <button className="cx-btn" onClick={()=>setDark(d=>!d)}>{dark? "🌙 Dark":"☀️ Light"}</button>
             <div style={{ display:"flex", gap:8 }}>
-              <button className="cx-btn" onClick={saveToCloud}>Save</button>
-              <button className="cx-btn" onClick={loadFromCloud}>Load</button>
+              <button className="cx-btn" onClick={()=>saveToCloud(false)}>Save</button>
+              {/* Load button removed by request */}
             </div>
           </div>
 
