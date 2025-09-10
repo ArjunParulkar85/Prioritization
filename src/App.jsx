@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 
 /* =========================
    Constants & Utilities
@@ -247,11 +247,22 @@ export default function App(){
   // responsive
   const isMobile=useMedia("(max-width: 767px)");
 
-  // persist local
-  useEffect(()=>{ saveNow({rows,weights,dark}); },[rows,weights,dark]);
+  // ------- Debounced cloud autosave -------
+  const cloudDebounce = useRef(null);
+  const queueCloudSave = () => {
+    if (cloudDebounce.current) clearTimeout(cloudDebounce.current);
+    cloudDebounce.current = setTimeout(() => { saveToCloud(true); }, 1500); // 1.5s after last change
+  };
+
+  // persist local + queue cloud save on ANY change
+  useEffect(()=>{
+    saveNow({rows,weights,dark});
+    queueCloudSave();
+  },[rows,weights,dark]);
+
   // autoload cloud on start
   useEffect(()=>{ loadFromCloud(true); },[]);
-  // autosave every 5 min
+  // backup autosave every 5 min
   useEffect(()=>{ const id=setInterval(()=>saveToCloud(true), 5*60*1000); return ()=>clearInterval(id); },[rows,weights,dark]);
 
   const scored=useMemo(()=>rows.map(r=>({...r, score:computeScore(r,weights)})),[rows,weights]);
@@ -461,15 +472,13 @@ export default function App(){
         *{ box-sizing:border-box; }
         html, body { overflow-x: hidden; }
 
-        .wrap{ max-width:1280px; margin:0 auto; } /* clamp width to remove horizontal scroll */
+        .wrap{ max-width:1280px; margin:0 auto; }
 
-        /* Header */
         .hdr{ display:grid; grid-template-columns:auto 1fr auto auto auto; align-items:center; gap:12px; margin-bottom:12px; }
         .hdr h1{ margin:0; font-weight:800; letter-spacing:.2px; font-size:clamp(18px, 2.6vw, 28px); }
         .icon-btn{ width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:50%;cursor:pointer; }
         .icon-btn:hover{ filter:brightness(1.06); }
 
-        /* Controls */
         .row{ display:grid; gap:10px; }
         .row.controls-1{ grid-template-columns: repeat(4, minmax(180px, 1fr)); }
         .row.controls-2{ grid-template-columns: 1.2fr 1fr .9fr; }
@@ -488,7 +497,6 @@ export default function App(){
 
         .cx-btn{ padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; cursor:pointer; }
         .cx-btn.primary{ background:var(--brand); color:#fff; border-color:var(--brand); }
-        .cx-btn.ghost{ background:transparent; }
 
         .cx-input,.cx-select,.cx-textarea{ background:var(--input); color:var(--text); border:1px solid var(--inputBorder); border-radius:12px; padding:10px 12px; outline:none; transition:border-color .15s, box-shadow .15s; line-height:1.25; }
         .cx-select{ width:100%; }
@@ -497,13 +505,11 @@ export default function App(){
         .title-textarea{ overflow:hidden; resize:none; min-height:46px; }
 
         .scroll-viewport{ max-height:66vh; overflow:auto; }
-        /* orange scrollbar */
         .scroll-viewport::-webkit-scrollbar{ width:12px;height:12px; }
         .scroll-viewport::-webkit-scrollbar-track{ background:var(--panel); border-left:1px solid var(--border); }
         .scroll-viewport::-webkit-scrollbar-thumb{ background:linear-gradient(180deg, ${BRAND}, ${BRAND}AA); border-radius:8px; border:3px solid var(--panel); }
         .scroll-viewport{ scrollbar-width:thin; scrollbar-color:${BRAND} var(--panel); }
 
-        /* Table (no horizontal scroll) */
         .cx-table{ width:100%; border-collapse:separate; border-spacing:0; table-layout:auto; }
         .cx-table thead th{ position:sticky; top:0; background:var(--panel); z-index:2; }
         .cell{ padding:10px 12px; vertical-align:top; }
@@ -531,7 +537,6 @@ export default function App(){
         .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:60; }
         .modal{ width:min(560px,92vw); background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
 
-        /* Cards (mobile) */
         .card{ border-radius:14px; padding:12px; margin:12px 0; }
         .card-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
         .card-top .chip{ width:38px;height:38px;border-radius:999px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center; }
@@ -548,11 +553,9 @@ export default function App(){
           <img src="/cxo-logo.png" alt="CXO" style={{height:36,width:36,borderRadius:8,objectFit:"cover"}}/>
           <h1><span>CharterXO </span><span style={{color:BRAND,fontWeight:900}}>Backlog Intelligence</span></h1>
           <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
-          {/* sun / moon toggle */}
           <button className="icon-btn" title={dark ? "Light mode" : "Dark mode"} aria-label="Toggle dark mode" onClick={()=>setDark(d=>!d)}>
             {dark ? <SunIcon/> : <MoonIcon/>}
           </button>
-          {/* logout */}
           <button className="icon-btn" title="Log out" aria-label="Log out" onClick={()=>{ localStorage.removeItem(AUTH_KEY); setAuthed(false); }}>
             <DoorIcon/>
           </button>
@@ -560,7 +563,6 @@ export default function App(){
 
         {/* Controls */}
         <div style={{background:theme.panel,border:`1px solid ${theme.border}`,borderRadius:14,padding:12,marginBottom:12}}>
-          {/* Row 1 */}
           <div className="row controls-1" style={{marginBottom:10}}>
             <button className="cx-btn primary" onClick={fetchBoards}>Connect Trello</button>
             <select className="cx-select" value={boardId} onChange={e=>fetchListsFor(e.target.value)} title="Choose board">
@@ -574,7 +576,6 @@ export default function App(){
             <button className="cx-btn" onClick={importFromList}>Import from list</button>
           </div>
 
-          {/* Row 2 */}
           <div className="row controls-2" style={{marginBottom:10}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr .8fr",gap:10}}>
               <select className="cx-select" value={sortKey} onChange={e=>setSortKey(e.target.value)}>
@@ -594,7 +595,6 @@ export default function App(){
             <input className="cx-input" placeholder="Search title or description…" value={query} onChange={e=>setQuery(e.target.value)}/>
           </div>
 
-          {/* Row 3: simplified selection controls */}
           <div className="row controls-3">
             <button className="cx-btn" onClick={selectAll}>Select All</button>
             <button className="cx-btn" onClick={clearAll}>Clear Selection</button>
@@ -710,7 +710,7 @@ export default function App(){
               <button className="cx-btn primary" onClick={addRow}>Add Row</button>
               <button className="cx-btn" onClick={confirmPushSelected}>Push Selected</button>
               <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
-              <button className="cx-btn" onClick={()=>saveToCloud(false)}>Save</button>
+              {/* no explicit Save button anymore; autosave handles it */}
             </div>
           </div>
         )}
