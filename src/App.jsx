@@ -270,23 +270,34 @@ export default function App(){
     const q=query.trim().toLowerCase(); if(!q) return scored;
     return scored.filter(r=>(r.name||"").toLowerCase().includes(q)||(r.notes||"").toLowerCase().includes(q));
   },[scored,query]);
-  const sorted=useMemo(()=>{
-    const arr=[...searched];
-    arr.sort((a,b)=>{
-      const ax=sortKey==="name"? String(a.name||"").toLowerCase(): a[sortKey];
-      const bx=sortKey==="name"? String(b.name||"").toLowerCase(): b[sortKey];
-      if(ax<bx) return sortDir==="asc"?-1:1;
-      if(ax>bx) return sortDir==="asc"?1:-1;
-      return 0;
-    });
-    return arr;
-  },[searched,sortKey,sortDir]);
+  const viewRows = searched;
 
   const setW=(k,v)=>setWeights(w=>({...w,[k]:Number(v)}));
   const updateRow=(id,patch)=>setRows(rs=>rs.map(r=>r.id===id?{...r,...patch}:r));
   const removeRow=(id)=>setRows(rs=>rs.filter(r=>r.id!==id));
   const toggleSelect=(id,v)=>updateRow(id,{selected:v});
   const addRow=()=>setRows(rs=>[startRow(), ...rs]);
+
+  const submitScores = () => {
+    const valueForSort = (row) => {
+      if (sortKey === "name") return String(row.name || "").toLowerCase();
+      if (sortKey === "score") return computeScore(row, weights);
+      return Number(row[sortKey] ?? 0);
+    };
+
+    setRows(prev => {
+      const arr=[...prev];
+      arr.sort((a,b)=>{
+        const ax=valueForSort(a);
+        const bx=valueForSort(b);
+        if(ax<bx) return sortDir==="asc"?-1:1;
+        if(ax>bx) return sortDir==="asc"?1:-1;
+        return 0;
+      });
+      return arr;
+    });
+    setStatus("✅ Scores submitted. Items reordered.");
+  };
 
   const selectAll =()=>{ setRows(prev=>prev.map(r=>({...r,selected:true}))); bumpEpoch(); setStatus("✅ Selected all rows."); };
   const clearAll  =()=>{ setRows(prev=>prev.map(r=>({...r,selected:false}))); bumpEpoch(); setStatus("✅ Cleared selection."); };
@@ -577,7 +588,7 @@ export default function App(){
           </div>
 
           <div className="row controls-2" style={{marginBottom:10}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr .8fr",gap:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr .8fr auto",gap:10}}>
               <select className="cx-select" value={sortKey} onChange={e=>setSortKey(e.target.value)}>
                 <option value="score">Sort by: Priority Score</option>
                 <option value="name">Title (A→Z)</option>
@@ -591,6 +602,7 @@ export default function App(){
                 <option value="desc">High → Low</option>
                 <option value="asc">Low → High</option>
               </select>
+              <button className="cx-btn primary" onClick={submitScores}>Submit Scores</button>
             </div>
             <input className="cx-input" placeholder="Search title or description…" value={query} onChange={e=>setQuery(e.target.value)}/>
           </div>
@@ -615,7 +627,7 @@ export default function App(){
                     <th className="cell col-sel">
                       <label style={{display:"inline-flex",alignItems:"center",gap:8}}>
                         <input type="checkbox"
-                          checked={sorted.length>0 && sorted.every(r=>!!r.selected)}
+                          checked={viewRows.length>0 && viewRows.every(r=>!!r.selected)}
                           onChange={e=>e.target.checked? selectAll(): clearAll()} />
                         Sel
                       </label>
@@ -631,7 +643,7 @@ export default function App(){
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map(r=>(
+                  {viewRows.map(r=>(
                     <tr key={`${r.id}-${selectionEpoch}`} style={{borderTop:`1px solid ${theme.border}`}}>
                       <td className="cell">
                         <div className="cx-chip" style={{background:colorForScore(r.score)}}>{r.score}</div>
@@ -691,7 +703,7 @@ export default function App(){
                 <button className="cx-btn primary" onClick={addRow}>Add Row</button>
                 <button className="cx-btn" onClick={confirmPushSelected}>Push Selected to Trello</button>
                 <button className="cx-btn" onClick={()=>{
-                  const ordered=sorted.filter(r=>r.imported && (r.trelloId||r.shortLink));
+                  const ordered=viewRows.filter(r=>r.imported && (r.trelloId||r.shortLink));
                   if(!ordered.length) return setStatus("No imported cards with Trello IDs to reorder.");
                   setConfirm({open:true,type:"push-order",payload:{ordered},message:`Reorder ${ordered.length} card(s) on Trello to match this view?`});
                 }}>Push Order to Trello</button>
@@ -702,12 +714,13 @@ export default function App(){
         ) : (
           /* Mobile list */
           <div>
-            {sorted.map(r=>(
+            {viewRows.map(r=>(
               <RowCard key={`${r.id}-${selectionEpoch}`} r={r} theme={theme}
                 updateRow={updateRow} setConfirm={setConfirm} toggleSelect={toggleSelect}/>
             ))}
             <div style={{position:"sticky",bottom:0,background:theme.panel,border:`1px solid ${theme.border}`,borderRadius:14,padding:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <button className="cx-btn primary" onClick={addRow}>Add Row</button>
+              <button className="cx-btn primary" onClick={submitScores}>Submit Scores</button>
               <button className="cx-btn" onClick={confirmPushSelected}>Push Selected</button>
               <button className="cx-btn" onClick={()=>setShowWeights(true)}>Weights</button>
               {/* no explicit Save button anymore; autosave handles it */}
